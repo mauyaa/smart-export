@@ -138,14 +138,24 @@ def get_all_fertilizer_names() -> list:
         return [r["name"] for r in rows]
 
 
+def normalize_name(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
 def resolve_fertilizer_name(fertilizer_name: str) -> tuple:
     all_names = get_all_fertilizer_names()
     if fertilizer_name in all_names:
         return fertilizer_name, "exact"
 
-    close = difflib.get_close_matches(fertilizer_name, all_names, n=1, cutoff=0.6)
+    normalized_input = normalize_name(fertilizer_name)
+    normalized_map = {normalize_name(n): n for n in all_names}
+
+    if normalized_input in normalized_map:
+        return normalized_map[normalized_input], f"fuzzy:{fertilizer_name}"
+
+    close = difflib.get_close_matches(normalized_input, list(normalized_map.keys()), n=1, cutoff=0.6)
     if close:
-        return close[0], f"fuzzy:{fertilizer_name}"
+        return normalized_map[close[0]], f"fuzzy:{fertilizer_name}"
 
     return fertilizer_name, "exact"
 
