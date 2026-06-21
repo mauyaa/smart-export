@@ -20,6 +20,7 @@ import json
 import time
 import logging
 import difflib
+import base64
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
 from openai import OpenAI, APIError, APIConnectionError
+from fastapi import UploadFile, File
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -51,6 +53,7 @@ NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j://127.0.0.1:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.environ.get("FEATHERLESS_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
+FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173").split(",")
 
 driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
@@ -320,3 +323,103 @@ def health():
     except (ServiceUnavailable, Neo4jError) as e:
         raise HTTPException(status_code=503, detail=f"Neo4j unavailable: {e}")
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Label extraction (vision) — separate endpoint, frontend calls this first,
+# then feeds product_name into /check. Decoupled deliberately so OCR/vision
+# can be swapped or improved independently of risk-matching logic.
+# ---------------------------------------------------------------------------
+class ExtractLabelResponse(BaseModel):
+    product_name: Optional[str] = None
+    possible_ingredients: list = []
+    confidence: str  # "high" | "medium" | "low"
+    raw_model_output: str
+
+
+def encode_image_to_data_url(image_bytes: bytes, content_type: str) -> str:
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    mime = content_type if content_type in ("image/jpeg", "image/png", "image/webp") else "image/jpeg"
+    return f"data:{mime};base64,{b64}"
+
+
+def extract_label_with_vision(image_bytes: bytes, content_type: str) -> ExtractLabelResponse:
+    data_url = encode_image_to_data_url(image_bytes, content_type)
+
+    extraction_prompt = (
+        "You are reading a fertilizer/pesticide product label photo, possibly blurry, "
+        "handwritten, or in a language other than English. Extract:\n"
+        "1. The product/brand name as printed\n"
+        "2. Any active ingredient names visible (chemical names)\n"
+        "3. Your confidence: 'high' if both name and ingredients are clearly legible, "
+        "'medium' if partially legible, 'low' if mostly illegible or you are guessing.\n\n"
+        "Respond with ONLY valid JSON, no other text, in this exact shape:\n"
+        '{"product_name": "...", "possible_ingredients": ["..."], "confidence": "high|medium|low"}\n'
+        "If you cannot read a product name at all, set product_name to null and confidence to 'low'."
+    )
+
+    try:
+        response = llm_client.chat.completions.create(
+            model=FEATHERLESS_VISION_MODEL,
+            max_tokens=300,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": extraction_prompt},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                }
+            ],
+        )
+        raw_text = response.choices[0].message.content.strip()
+    except (APIError, APIConnectionError) as e:
+        logger.error(f"Featherless vision API error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Label extraction service is temporarily unavailable. Please retry or enter the product name manually."
+        )
+
+    # Defensive parsing — vision models sometimes wrap JSON in markdown fences
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```")[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+
+    try:
+        parsed = json.loads(cleaned)
+        product_name = parsed.get("product_name")
+        ingredients = parsed.get("possible_ingredients", [])
+        confidence = parsed.get("confidence", "low")
+        if confidence not in ("high", "medium", "low"):
+            confidence = "low"
+    except (json.JSONDecodeError, AttributeError):
+        logger.warning(f"Could not parse vision model output as JSON: {raw_text[:200]}")
+        product_name = None
+        ingredients = []
+        confidence = "low"
+
+    return ExtractLabelResponse(
+        product_name=product_name,
+        possible_ingredients=ingredients if isinstance(ingredients, list) else [],
+        confidence=confidence,
+        raw_model_output=raw_text,
+    )
+
+
+@app.post("/extract-label", response_model=ExtractLabelResponse)
+@limiter.limit("10/minute")
+async def extract_label(request: Request, file: UploadFile = File(...)):
+    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Please upload JPEG, PNG, or WEBP."
+        )
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
+
+    return extract_label_with_vision(image_bytes, file.content_type)
