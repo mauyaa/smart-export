@@ -21,7 +21,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r api/requirements.txt
+        run: |
+          pip install -r api/requirements.txt
+          pip install pytest requests
 
       - name: Run smoke tests against deployed API
         env:
