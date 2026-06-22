@@ -160,8 +160,14 @@ class TestEscalate:
 
 class TestCORS:
     def test_cors_header_present(self):
-        r = api_post("/check", {
-            "fertilizer_name": "Orthene 75SP",
-            "crop_name": "French beans"
-        })
-        assert "access-control-allow-credentials" in r.headers
+        """CORS headers are only returned when request includes an Origin header."""
+        url = f"{BASE_URL}/check"
+        r = requests.post(
+            url,
+            json={"fertilizer_name": "Orthene 75SP", "crop_name": "French beans"},
+            headers={"Origin": "http://localhost:3000"},
+            timeout=60
+        )
+        assert r.status_code == 200
+        assert "access-control-allow-credentials" in r.headers, \
+            "CORS header missing — frontend will be blocked"
