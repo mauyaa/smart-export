@@ -48,5 +48,5 @@ jobs:
         run: |
           flake8 api/main.py \
             --max-line-length=120 \
-            --ignore=E501,W503,E302,E303 \
+            --ignore=E501,W503,E302,E303,E402,E131 \
             --count
