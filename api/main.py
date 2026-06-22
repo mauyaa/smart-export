@@ -323,6 +323,20 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
         "message": "Your request has been logged for expert review. "
                     "Live reviewer routing is not yet active in this prototype."
     }
+@app.get("/")
+def root():
+    return {
+        "service": "SmartExports API",
+        "version": "0.1.0",
+        "description": "AI-powered fertilizer EU compliance risk checker for Kenyan smallholder farmers",
+        "docs": "/docs",
+        "endpoints": {
+            "check": "POST /check",
+            "extract_label": "POST /extract-label",
+            "escalate": "POST /escalate",
+            "health": "GET /health"
+        }
+    }
 
 
 @app.get("/health")
