@@ -25,11 +25,4 @@ Safe / Risky / Unclear verdict with a grounded explanation.
 | `POST /check` | Risk verdict for a fertilizer + crop |
 | `POST /extract-label` | Extract product name from label photo |
 | `POST /escalate` | Log unknown products for expert review |
-| `GET /health` | Service liveness check |
-
-## Team
-- Byorder Mochache — Neo4j + Backend
-- Bevan Mauya — Product Design
-- Bernice Wakarindi — Backend
-- Michael Maina — Frontend
-- Lilian Kwamboka — Research
+| `GET /health` | Service liveness check 
