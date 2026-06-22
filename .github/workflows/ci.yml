@@ -25,6 +25,14 @@ jobs:
           pip install -r api/requirements.txt
           pip install pytest requests
 
+      - name: Warm up Render instance
+        run: |
+          echo "Waking up Render free tier instance..."
+          curl --retry 5 --retry-delay 15 --retry-connrefused \
+            -o /dev/null -s -w "%{http_code}" \
+            ${{ secrets.API_BASE_URL }}/health || true
+          sleep 10
+
       - name: Run smoke tests against deployed API
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
