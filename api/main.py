@@ -80,6 +80,7 @@ DEFAULT_CORS_ORIGINS = ",".join(
         "https://smart-export.vercel.app",
         "https://smart-export-mauyaas-projects.vercel.app",
         "https://smartexports.vercel.app",
+        "https://front-end-nu-rosy-90.vercel.app",
     ]
 )
 CORS_ORIGINS = [
