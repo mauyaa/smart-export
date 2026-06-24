@@ -37,6 +37,10 @@ from fastapi import UploadFile, File
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+try:
+    from ai import extract_label, generate_grounded_explanation
+except ImportError:
+    from api.ai import extract_label, generate_grounded_explanation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartexports")
@@ -186,54 +190,7 @@ def get_alternative(fertilizer_name: str, crop_name: str):
         return rows[0] if rows else None
 
 
-def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, evidence_path: list) -> str:
-    if not evidence_path:
-        return (
-            f"No matching substance, regulation, or rejection-case data was found "
-            f"for {fertilizer} in our current dataset. This does not mean it is safe — "
-            f"it means we don't have data yet. Treat as Unclear and seek expert review."
-        )
 
-    system_prompt = (
-        "You are explaining fertilizer export-compliance risk to a smallholder Kenyan farmer "
-        "who may have limited English literacy. Rules:\n"
-        "1. Only state facts present in the JSON evidence provided below.\n"
-        "2. Never invent a regulation, limit, or rejection case not in the evidence.\n"
-        "3. Output ONLY the explanation itself — no preamble like 'Here are some sentences', "
-        "no headers, no meta-commentary about the task.\n"
-        "4. Write 3-4 short plain-language sentences. No jargon, no legal codes unless naming them briefly.\n"
-        "5. End with one clear, concrete next step."
-    )
-
-    user_prompt = (
-        f"Fertilizer: {fertilizer}\nCrop: {crop}\nRisk level: {risk_level}\n\n"
-        f"Evidence (graph path from database, the ONLY facts you may use):\n"
-        f"{json.dumps(evidence_path, indent=2, default=str)}"
-    )
-
-    try:
-        response = llm_client.chat.completions.create(
-            model=FEATHERLESS_MODEL,
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        text = response.choices[0].message.content.strip()
-    except (APIError, APIConnectionError) as e:
-        logger.error(f"Featherless API error: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Explanation service is temporarily unavailable. Risk level is still valid — please retry shortly."
-        )
-
-    for prefix in ["Here are 3-4 short plain-language sentences", "Here is", "Here's"]:
-        if text.lower().startswith(prefix.lower()):
-            text = text.split(":", 1)[-1].strip() if ":" in text[:120] else text
-            break
-
-    return text
 
 
 @app.post("/check", response_model=ResultCard)
@@ -361,76 +318,7 @@ class ExtractLabelResponse(BaseModel):
     raw_model_output: str
 
 
-def encode_image_to_data_url(image_bytes: bytes, content_type: str) -> str:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-    mime = content_type if content_type in ("image/jpeg", "image/png", "image/webp") else "image/jpeg"
-    return f"data:{mime};base64,{b64}"
 
-
-def extract_label_with_vision(image_bytes: bytes, content_type: str) -> ExtractLabelResponse:
-    data_url = encode_image_to_data_url(image_bytes, content_type)
-
-    extraction_prompt = (
-        "You are reading a fertilizer/pesticide product label photo, possibly blurry, "
-        "handwritten, or in a language other than English. Extract:\n"
-        "1. The product/brand name as printed\n"
-        "2. Any active ingredient names visible (chemical names)\n"
-        "3. Your confidence: 'high' if both name and ingredients are clearly legible, "
-        "'medium' if partially legible, 'low' if mostly illegible or you are guessing.\n\n"
-        "Respond with ONLY valid JSON, no other text, in this exact shape:\n"
-        '{"product_name": "...", "possible_ingredients": ["..."], "confidence": "high|medium|low"}\n'
-        "If you cannot read a product name at all, set product_name to null and confidence to 'low'."
-    )
-
-    try:
-        response = llm_client.chat.completions.create(
-            model=FEATHERLESS_VISION_MODEL,
-            max_tokens=300,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": extraction_prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }
-            ],
-        )
-        raw_text = response.choices[0].message.content.strip()
-    except (APIError, APIConnectionError) as e:
-        logger.error(f"Featherless vision API error: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Label extraction service is temporarily unavailable. Please retry or enter the product name manually."
-        )
-
-    # Defensive parsing — vision models sometimes wrap JSON in markdown fences
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1]
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
-        cleaned = cleaned.strip()
-
-    try:
-        parsed = json.loads(cleaned)
-        product_name = parsed.get("product_name")
-        ingredients = parsed.get("possible_ingredients", [])
-        confidence = parsed.get("confidence", "low")
-        if confidence not in ("high", "medium", "low"):
-            confidence = "low"
-    except (json.JSONDecodeError, AttributeError):
-        logger.warning(f"Could not parse vision model output as JSON: {raw_text[:200]}")
-        product_name = None
-        ingredients = []
-        confidence = "low"
-
-    return ExtractLabelResponse(
-        product_name=product_name,
-        possible_ingredients=ingredients if isinstance(ingredients, list) else [],
-        confidence=confidence,
-        raw_model_output=raw_text,
-    )
 
 
 @app.post("/extract-label", response_model=ExtractLabelResponse)
@@ -446,4 +334,4 @@ async def extract_label(request: Request, file: UploadFile = File(...)):
     if len(image_bytes) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
 
-    return extract_label_with_vision(image_bytes, file.content_type)
+    return ExtractLabelResponse(**extract_label(image_bytes, file.content_type))
