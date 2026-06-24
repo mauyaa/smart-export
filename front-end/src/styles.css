@@ -1,0 +1,211 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * SmartExports design system.
+ *
+ * Principles: isolation, one accent, golden-ratio proportion, tension, denoise.
+ * Editorial paper + ink aesthetic with risk-coded states.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-rule: var(--rule);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-safe: var(--safe);
+  --color-safe-soft: var(--safe-soft);
+  --color-risky: var(--risky);
+  --color-risky-soft: var(--risky-soft);
+  --color-unclear: var(--unclear);
+  --color-unclear-soft: var(--unclear-soft);
+
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Paper + ink */
+  --paper: oklch(0.972 0.012 85); /* warm off-white */
+  --ink: oklch(0.18 0.012 70); /* warm near-black */
+  --ink-soft: oklch(0.42 0.012 70);
+  --rule: oklch(0.86 0.012 80);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: oklch(0.995 0.006 85);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+
+  /* Single accent — clay/earth */
+  --primary: oklch(0.55 0.16 38); /* burnt clay */
+  --primary-foreground: oklch(0.985 0.012 85);
+
+  --secondary: oklch(0.94 0.014 80);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.93 0.012 80);
+  --muted-foreground: var(--ink-soft);
+  --accent: oklch(0.94 0.014 80);
+  --accent-foreground: var(--ink);
+
+  --destructive: oklch(0.55 0.21 28);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--primary);
+
+  /* Risk semantics */
+  --safe: oklch(0.42 0.1 150); /* deep moss */
+  --safe-soft: oklch(0.94 0.04 150);
+  --risky: oklch(0.5 0.2 28); /* clay red */
+  --risky-soft: oklch(0.94 0.05 28);
+  --unclear: oklch(0.62 0.14 70); /* mustard */
+  --unclear-soft: oklch(0.95 0.05 85);
+
+  --chart-1: var(--primary);
+  --chart-2: var(--safe);
+  --chart-3: var(--unclear);
+  --chart-4: var(--risky);
+  --chart-5: var(--ink-soft);
+
+  --sidebar: var(--paper);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--rule);
+  --sidebar-ring: var(--primary);
+}
+
+.dark {
+  --paper: oklch(0.16 0.008 70);
+  --ink: oklch(0.96 0.008 85);
+  --ink-soft: oklch(0.72 0.012 80);
+  --rule: oklch(0.28 0.01 70);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: oklch(0.2 0.01 70);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+
+  --primary: oklch(0.68 0.16 42);
+  --primary-foreground: oklch(0.14 0.01 70);
+  --secondary: oklch(0.24 0.01 70);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.24 0.01 70);
+  --muted-foreground: var(--ink-soft);
+  --accent: oklch(0.24 0.01 70);
+  --accent-foreground: var(--ink);
+  --destructive: oklch(0.62 0.22 28);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--primary);
+
+  --safe: oklch(0.72 0.14 150);
+  --safe-soft: oklch(0.28 0.06 150);
+  --risky: oklch(0.7 0.2 28);
+  --risky-soft: oklch(0.28 0.08 28);
+  --unclear: oklch(0.78 0.14 75);
+  --unclear-soft: oklch(0.28 0.06 75);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+}
+
+/* Subtle paper grain — denoised, almost imperceptible */
+.paper-grain {
+  background-image:
+    radial-gradient(circle at 25% 35%, oklch(0 0 0 / 0.018) 0.5px, transparent 1px),
+    radial-gradient(circle at 75% 65%, oklch(0 0 0 / 0.014) 0.5px, transparent 1px);
+  background-size:
+    3px 3px,
+    5px 5px;
+}
+
+/* Fine hairline rule used as section separator */
+.hairline {
+  height: 1px;
+  background: var(--rule);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 24px color-mix(in oklab, var(--primary) 0%, transparent);
+  }
+}
+.animate-pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
+}

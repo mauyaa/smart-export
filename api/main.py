@@ -12,7 +12,8 @@ Flow per request:
 7. Return a single result card to the frontend
 
 Run with: uvicorn main:app --reload --port 8000
-Env vars required: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, FEATHERLESS_API_KEY
+Production GraphRAG env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, FEATHERLESS_API_KEY
+Use SMARTEXPORTS_DEMO_MODE=true for local startup without production secrets.
 """
 
 import os
@@ -21,7 +22,7 @@ import time
 import logging
 import difflib
 import base64
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -43,10 +44,24 @@ logger = logging.getLogger("smartexports")
 
 REQUIRED_ENV_VARS = ["NEO4J_PASSWORD", "FEATHERLESS_API_KEY"]
 missing = [v for v in REQUIRED_ENV_VARS if not os.environ.get(v)]
-if missing:
+SMARTEXPORTS_DEMO_MODE = os.environ.get("SMARTEXPORTS_DEMO_MODE", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+DEMO_MODE = SMARTEXPORTS_DEMO_MODE
+
+if missing and not DEMO_MODE:
     raise RuntimeError(
         f"Missing required environment variable(s): {', '.join(missing)}. "
-        f"Copy api/.env.example to api/.env and fill in real values."
+        f"Copy api/.env.example to api/.env and fill in real values, or set "
+        f"SMARTEXPORTS_DEMO_MODE=true for local demo mode."
+    )
+if DEMO_MODE:
+    logger.warning(
+        "SmartExports API is running in demo mode. Set Neo4j and Featherless "
+        "credentials and SMARTEXPORTS_DEMO_MODE=false for production GraphRAG."
     )
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j://127.0.0.1:7687")
@@ -54,11 +69,25 @@ NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.environ.get("FEATHERLESS_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
 FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173").split(",")
+DEFAULT_CORS_ORIGINS = ",".join(
+    [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ]
+)
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
 
-driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+driver = None if DEMO_MODE else GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
-llm_client = OpenAI(
+llm_client = None if DEMO_MODE else OpenAI(
     api_key=os.environ.get("FEATHERLESS_API_KEY"),
     base_url="https://api.featherless.ai/v1",
 )
@@ -109,6 +138,209 @@ class EscalateRequest(BaseModel):
 _CACHE: dict = {}
 _CACHE_TTL_SECONDS = 60 * 30
 
+DEMO_CROPS = [
+    "French beans",
+    "Snow peas",
+    "Avocado",
+    "Passion fruit",
+    "Maize",
+    "Tea",
+    "Coffee",
+    "Macadamia",
+    "Mango",
+    "Cut flowers",
+    "Pineapple",
+]
+
+DEMO_PRODUCTS: dict[str, dict[str, Any]] = {
+    "Orthene 75SP": {
+        "brand": "Generic AgroDealer KE",
+        "risk_level": "Risky",
+        "substances": [{"name": "Acephate", "category": "organophosphate_pesticide"}],
+        "regulatory_hits": [
+            {
+                "substance": "Acephate",
+                "category": "organophosphate_pesticide",
+                "restriction": {
+                    "regulationCode": "EU MRL Pesticides",
+                    "regulationName": "EU Pesticides Database - Maximum Residue Levels",
+                    "limit": 0.01,
+                    "unit": "mg/kg",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [
+            {
+                "substance": "Acephate",
+                "category": "organophosphate_pesticide",
+                "restriction": None,
+                "rejectionCase": {
+                    "id": "KE-2020-001",
+                    "date": "2020-06-15",
+                    "summary": "Kenyan fine beans rejected at EU border for excess Acephate residue.",
+                    "source": "Expert committee report",
+                },
+                "organicRestriction": None,
+            }
+        ],
+        "organic_hits": [
+            {
+                "substance": "Acephate",
+                "category": "organophosphate_pesticide",
+                "restriction": None,
+                "rejectionCase": None,
+                "organicRestriction": {
+                    "regulationCode": "EU 2021/1165",
+                    "note": "not authorized for organic use",
+                },
+            }
+        ],
+        "alternative": "Muriate of Potash",
+    },
+    "Thunder 145SC": {
+        "brand": "Generic AgroDealer KE",
+        "risk_level": "Risky",
+        "substances": [{"name": "Chlorpyrifos", "category": "organophosphate_pesticide"}],
+        "regulatory_hits": [
+            {
+                "substance": "Chlorpyrifos",
+                "category": "organophosphate_pesticide",
+                "restriction": {
+                    "regulationCode": "EU MRL Pesticides",
+                    "regulationName": "EU Pesticides Database - Maximum Residue Levels",
+                    "limit": 0.01,
+                    "unit": "mg/kg",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": "CAN (Calcium Ammonium Nitrate)",
+    },
+    "Duduthrin 1.75EC": {
+        "brand": "Generic AgroDealer KE",
+        "risk_level": "Risky",
+        "substances": [{"name": "Chlorpyrifos", "category": "organophosphate_pesticide"}],
+        "regulatory_hits": [
+            {
+                "substance": "Chlorpyrifos",
+                "category": "organophosphate_pesticide",
+                "restriction": {
+                    "regulationCode": "EU MRL Pesticides",
+                    "regulationName": "EU Pesticides Database - Maximum Residue Levels",
+                    "limit": 0.01,
+                    "unit": "mg/kg",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": "Muriate of Potash",
+    },
+    "Dudu Diazinon 60EC": {
+        "brand": "Generic AgroDealer KE",
+        "risk_level": "Risky",
+        "substances": [{"name": "Diazinon", "category": "organophosphate_pesticide"}],
+        "regulatory_hits": [
+            {
+                "substance": "Diazinon",
+                "category": "organophosphate_pesticide",
+                "restriction": {
+                    "regulationCode": "EU MRL Pesticides",
+                    "regulationName": "EU Pesticides Database - Maximum Residue Levels",
+                    "limit": 0.01,
+                    "unit": "mg/kg",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": "Muriate of Potash",
+    },
+    "Ridomil Gold MZ 68WG": {
+        "brand": "Syngenta",
+        "risk_level": "Risky",
+        "substances": [{"name": "Mancozeb", "category": "fungicide"}],
+        "regulatory_hits": [
+            {
+                "substance": "Mancozeb",
+                "category": "fungicide",
+                "restriction": {
+                    "regulationCode": "EU MRL Pesticides",
+                    "regulationName": "EU Pesticides Database - Maximum Residue Levels",
+                    "limit": 0.05,
+                    "unit": "mg/kg",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": "Muriate of Potash",
+    },
+    "NPK 17:17:17": {
+        "brand": "MEA Fertilizer",
+        "risk_level": "Risky",
+        "substances": [
+            {"name": "Cadmium", "category": "heavy_metal"},
+            {"name": "Nitrogen (Urea form)", "category": "macronutrient"},
+        ],
+        "regulatory_hits": [
+            {
+                "substance": "Cadmium",
+                "category": "heavy_metal",
+                "restriction": {
+                    "regulationCode": "EU 2019/1009",
+                    "regulationName": "Fertilising Products Regulation",
+                    "limit": 60,
+                    "unit": "mg/kg P2O5",
+                },
+                "rejectionCase": None,
+                "organicRestriction": None,
+            }
+        ],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": "CAN (Calcium Ammonium Nitrate)",
+    },
+    "Muriate of Potash": {
+        "brand": "Yara",
+        "risk_level": "Safe",
+        "substances": [{"name": "Potassium chloride", "category": "macronutrient"}],
+        "regulatory_hits": [],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": None,
+    },
+    "CAN (Calcium Ammonium Nitrate)": {
+        "brand": "Toyota Tsusho",
+        "risk_level": "Safe",
+        "substances": [{"name": "Nitrogen (Urea form)", "category": "macronutrient"}],
+        "regulatory_hits": [],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": None,
+    },
+    "Urea": {
+        "brand": "Generic AgroDealer KE",
+        "risk_level": "Safe",
+        "substances": [{"name": "Nitrogen (Urea form)", "category": "macronutrient"}],
+        "regulatory_hits": [],
+        "rejection_hits": [],
+        "organic_hits": [],
+        "alternative": None,
+    },
+}
+
 
 def cache_get(key: str):
     entry = _CACHE.get(key)
@@ -131,9 +363,23 @@ def run_query(tx, query, **params):
 
 
 def get_all_fertilizer_names() -> list:
+    if DEMO_MODE:
+        return list(DEMO_PRODUCTS.keys())
+
     with driver.session() as session:
         rows = session.execute_read(
             run_query, "MATCH (f:Fertilizer) RETURN f.name AS name"
+        )
+        return [r["name"] for r in rows]
+
+
+def get_all_crop_names() -> list:
+    if DEMO_MODE:
+        return DEMO_CROPS
+
+    with driver.session() as session:
+        rows = session.execute_read(
+            run_query, "MATCH (c:Crop) RETURN c.name AS name"
         )
         return [r["name"] for r in rows]
 
@@ -160,7 +406,65 @@ def resolve_fertilizer_name(fertilizer_name: str) -> tuple:
     return fertilizer_name, "exact"
 
 
+def resolve_crop_name(crop_name: str) -> str:
+    all_names = get_all_crop_names()
+    if crop_name in all_names:
+        return crop_name
+
+    normalized_input = normalize_name(crop_name)
+    normalized_map = {normalize_name(n): n for n in all_names}
+
+    if normalized_input in normalized_map:
+        return normalized_map[normalized_input]
+
+    close = difflib.get_close_matches(normalized_input, list(normalized_map.keys()), n=1, cutoff=0.75)
+    if close:
+        return normalized_map[close[0]]
+
+    return crop_name
+
+
+def demo_substance_findings(product: dict[str, Any]) -> list:
+    hits = (
+        product.get("regulatory_hits", [])
+        + product.get("rejection_hits", [])
+        + product.get("organic_hits", [])
+    )
+    if hits:
+        return hits
+
+    return [
+        {
+            "substance": substance["name"],
+            "category": substance["category"],
+            "restriction": None,
+            "rejectionCase": None,
+            "organicRestriction": None,
+        }
+        for substance in product.get("substances", [])
+    ]
+
+
+def get_demo_risk_match(fertilizer_name: str, crop_name: str):
+    product = DEMO_PRODUCTS.get(fertilizer_name)
+    if not product:
+        return None
+
+    return {
+        "fertilizer": fertilizer_name,
+        "crop": crop_name,
+        "substanceFindings": demo_substance_findings(product),
+        "riskLevel": product.get("risk_level", "Unclear"),
+        "rejectionHits": product.get("rejection_hits", []),
+        "regulatoryHits": product.get("regulatory_hits", []),
+        "organicHits": product.get("organic_hits", []),
+    }
+
+
 def get_risk_match(fertilizer_name: str, crop_name: str):
+    if DEMO_MODE:
+        return get_demo_risk_match(fertilizer_name, crop_name)
+
     with driver.session() as session:
         rows = session.execute_read(
             run_query, RISK_MATCH_QUERY,
@@ -170,6 +474,39 @@ def get_risk_match(fertilizer_name: str, crop_name: str):
 
 
 def get_explanation_path(fertilizer_name: str):
+    if DEMO_MODE:
+        product = DEMO_PRODUCTS.get(fertilizer_name)
+        if not product:
+            return []
+
+        evidence = demo_substance_findings(product)
+        first_hit = evidence[0] if evidence else {}
+        target = (
+            first_hit.get("restriction")
+            or first_hit.get("rejectionCase")
+            or first_hit.get("organicRestriction")
+            or {"name": "No restriction found"}
+        )
+        return [
+            {
+                "pathNodes": [
+                    {"labels": ["Fertilizer"], "props": {"name": fertilizer_name, "brand": product.get("brand")}},
+                    {
+                        "labels": ["Substance"],
+                        "props": {
+                            "name": first_hit.get("substance"),
+                            "category": first_hit.get("category"),
+                        },
+                    },
+                    {"labels": ["Evidence"], "props": target},
+                ],
+                "pathRels": [
+                    {"type": "CONTAINS", "props": {}},
+                    {"type": "SUPPORTED_BY", "props": {}},
+                ],
+            }
+        ]
+
     with driver.session() as session:
         return session.execute_read(
             run_query, EXPLANATION_PATH_QUERY,
@@ -178,6 +515,11 @@ def get_explanation_path(fertilizer_name: str):
 
 
 def get_alternative(fertilizer_name: str, crop_name: str):
+    if DEMO_MODE:
+        product = DEMO_PRODUCTS.get(fertilizer_name)
+        alternative = product.get("alternative") if product else None
+        return {"alternativeProduct": alternative} if alternative else None
+
     with driver.session() as session:
         rows = session.execute_read(
             run_query, ALTERNATIVE_QUERY,
@@ -186,7 +528,33 @@ def get_alternative(fertilizer_name: str, crop_name: str):
         return rows[0] if rows else None
 
 
+def generate_demo_explanation(fertilizer: str, crop: str, risk_level: str, evidence_path: list) -> str:
+    if risk_level == "Safe":
+        return (
+            f"The current dataset does not show an EU restriction or Kenyan rejection case "
+            f"for {fertilizer} on {crop}. Keep the label and batch record with your farm "
+            f"notes, and follow the label rate. Re-check if the supplier or formulation changes."
+        )
+
+    if risk_level == "Risky":
+        evidence = evidence_path[0]["pathNodes"][-1]["props"] if evidence_path else {}
+        code = evidence.get("regulationCode") or evidence.get("id") or "the compliance evidence"
+        return (
+            f"{fertilizer} is flagged as Risky for {crop} in the current dataset. "
+            f"The evidence links it to {code}, which means it can put export eligibility at risk. "
+            f"Do not apply it to export-bound {crop}; use the suggested alternative or ask an agronomist."
+        )
+
+    return (
+        f"No matching substance, regulation, or rejection-case data was found for {fertilizer} "
+        f"on {crop}. This does not prove it is safe. Treat it as Unclear and send it for expert review."
+    )
+
+
 def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, evidence_path: list) -> str:
+    if DEMO_MODE:
+        return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
+
     if not evidence_path:
         return (
             f"No matching substance, regulation, or rejection-case data was found "
@@ -241,18 +609,19 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
 def check_fertilizer(request: Request, req: CheckRequest):
     try:
         resolved_name, matched_via = resolve_fertilizer_name(req.fertilizer_name)
+        resolved_crop = resolve_crop_name(req.crop_name)
     except (ServiceUnavailable, Neo4jError) as e:
         logger.error(f"Neo4j error during name resolution: {e}")
         raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
 
-    cache_key = f"{resolved_name}::{req.crop_name}"
+    cache_key = f"{resolved_name}::{resolved_crop}"
     cached = cache_get(cache_key)
     if cached:
         cached["matched_via"] = matched_via
         return ResultCard(**cached)
 
     try:
-        match = get_risk_match(resolved_name, req.crop_name)
+        match = get_risk_match(resolved_name, resolved_crop)
     except (ServiceUnavailable, Neo4jError) as e:
         logger.error(f"Neo4j error during risk match: {e}")
         raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
@@ -272,7 +641,7 @@ def check_fertilizer(request: Request, req: CheckRequest):
         logger.error(f"Neo4j error during explanation path: {e}")
         evidence_path = []
 
-    explanation = generate_grounded_explanation(resolved_name, req.crop_name, risk_level, evidence_path)
+    explanation = generate_grounded_explanation(resolved_name, resolved_crop, risk_level, evidence_path)
 
     next_step_map = {
         "Safe": "Proceed with application as planned.",
@@ -283,7 +652,7 @@ def check_fertilizer(request: Request, req: CheckRequest):
     alt = None
     if risk_level == "Risky":
         try:
-            alt_result = get_alternative(resolved_name, req.crop_name)
+            alt_result = get_alternative(resolved_name, resolved_crop)
             if alt_result:
                 alt = alt_result.get("alternativeProduct")
         except (ServiceUnavailable, Neo4jError) as e:
@@ -298,7 +667,7 @@ def check_fertilizer(request: Request, req: CheckRequest):
 
     result = {
         "fertilizer": match["fertilizer"],
-        "crop": match["crop"] or req.crop_name,
+        "crop": match["crop"] or resolved_crop,
         "risk_level": risk_level,
         "explanation": explanation,
         "next_step": next_step_map.get(risk_level, "Seek expert review."),
@@ -341,6 +710,9 @@ def root():
 
 @app.get("/health")
 def health():
+    if DEMO_MODE:
+        return {"status": "ok"}
+
     try:
         with driver.session() as session:
             session.run("RETURN 1")
@@ -367,7 +739,39 @@ def encode_image_to_data_url(image_bytes: bytes, content_type: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def extract_label_with_vision(image_bytes: bytes, content_type: str) -> ExtractLabelResponse:
+def compact_label_text(value: str) -> str:
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def guess_demo_product_name(filename: Optional[str]) -> str:
+    compact_filename = compact_label_text(filename or "")
+    for product_name in DEMO_PRODUCTS:
+        if compact_label_text(product_name) in compact_filename:
+            return product_name
+    return "Orthene 75SP"
+
+
+def extract_label_with_vision(
+    image_bytes: bytes,
+    content_type: str,
+    filename: Optional[str] = None,
+) -> ExtractLabelResponse:
+    if DEMO_MODE:
+        product_name = guess_demo_product_name(filename)
+        substances = [
+            substance["name"]
+            for substance in DEMO_PRODUCTS.get(product_name, {}).get("substances", [])
+        ]
+        return ExtractLabelResponse(
+            product_name=product_name,
+            possible_ingredients=substances,
+            confidence="medium",
+            raw_model_output=(
+                "Demo mode: vision OCR was skipped and the product was inferred "
+                "from the upload filename or sample fallback."
+            ),
+        )
+
     data_url = encode_image_to_data_url(image_bytes, content_type)
 
     extraction_prompt = (
@@ -446,4 +850,4 @@ async def extract_label(request: Request, file: UploadFile = File(...)):
     if len(image_bytes) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
 
-    return extract_label_with_vision(image_bytes, file.content_type)
+    return extract_label_with_vision(image_bytes, file.content_type, file.filename)

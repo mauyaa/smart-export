@@ -1,0 +1,27 @@
+{
+  "name": "SmartExports",
+  "short_name": "SmartExports",
+  "description": "EU compliance risk checker for Kenyan fertilizers. Snap a label, get a Safe / Risky / Unclear verdict in seconds.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f0e6",
+  "theme_color": "#f4f0e6",
+  "categories": ["agriculture", "productivity", "utilities"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
