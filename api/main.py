@@ -69,25 +69,26 @@ NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.getenv("FEATHERLESS_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
-DEFAULT_CORS_ORIGINS = ",".join(
-    [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "https://smart-export.vercel.app",
-        "https://smart-export-mauyaas-projects.vercel.app",
-        "https://smartexports.vercel.app",
-        "https://front-end-nu-rosy-90.vercel.app",
-    ]
-)
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
-    if origin.strip()
+DEFAULT_CORS_ORIGINS_LIST = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "https://smart-export.vercel.app",
+    "https://smart-export-mauyaas-projects.vercel.app",
+    "https://smartexports.vercel.app",
+    "https://front-end-nu-rosy-90.vercel.app",
 ]
+
+env_origins = os.environ.get("CORS_ORIGINS", "")
+CORS_ORIGINS = DEFAULT_CORS_ORIGINS_LIST.copy()
+if env_origins:
+    CORS_ORIGINS.extend([o.strip() for o in env_origins.split(",") if o.strip()])
+
+# Remove duplicates
+CORS_ORIGINS = list(set(CORS_ORIGINS))
 
 driver = None if DEMO_MODE else GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
