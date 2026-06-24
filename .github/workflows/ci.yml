@@ -60,3 +60,32 @@ jobs:
             --max-line-length=120 \
             --ignore=E501,W503,E302,E303,E402,E131 \
             --count
+
+  frontend:
+    name: Frontend Build & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: front-end
+        run: npm ci --no-optional
+
+      - name: Lint
+        working-directory: front-end
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: front-end
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: front-end
+        run: npm run build
