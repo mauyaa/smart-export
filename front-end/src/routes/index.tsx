@@ -1386,7 +1386,7 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="group inline-flex h-14 w-full items-center justify-center rounded-sm bg-foreground px-6 text-[14px] font-medium tracking-tight text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-40"
+      className="group inline-flex h-14 w-full items-center justify-center gap-2 rounded-sm bg-foreground px-6 text-[14px] font-medium tracking-tight text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>

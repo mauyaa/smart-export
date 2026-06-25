@@ -1,6 +1,7 @@
 // Lightweight i18n for SmartExports — English + Swahili.
 // No external dep; typed dictionary + React context.
 
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 export type Lang = "en" | "sw";
