@@ -1,9 +1,11 @@
 import os
+from types import SimpleNamespace
 
 os.environ["SMARTEXPORTS_DEMO_MODE"] = "true"
 
 from fastapi.testclient import TestClient
 
+from api import main
 from api.main import app
 
 
@@ -70,3 +72,31 @@ def test_demo_escalate_returns_received():
 
     assert response.status_code == 200
     assert response.json()["status"] == "received"
+
+
+def test_explanation_falls_back_when_model_returns_empty(monkeypatch):
+    def create_empty_explanation(**_kwargs):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
+        )
+
+    monkeypatch.setattr(main, "DEMO_MODE", False)
+    monkeypatch.setattr(
+        main,
+        "llm_client",
+        SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=create_empty_explanation)
+            )
+        ),
+    )
+
+    explanation = main.generate_grounded_explanation(
+        "Orthene 75SP",
+        "French beans",
+        "Risky",
+        [{"pathNodes": [{"props": {}}, {"props": {"regulationCode": "EU MRL Pesticides"}}]}],
+    )
+
+    assert "Orthene 75SP is flagged as Risky for French beans" in explanation
+    assert "EU MRL Pesticides" in explanation

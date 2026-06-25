@@ -593,13 +593,14 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
                 {"role": "user", "content": user_prompt},
             ],
         )
-        text = response.choices[0].message.content.strip()
-    except (APIError, APIConnectionError) as e:
-        logger.error(f"Featherless API error: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Explanation service is temporarily unavailable. Risk level is still valid — please retry shortly."
-        )
+        text = (response.choices[0].message.content or "").strip()
+    except (APIError, APIConnectionError, AttributeError, IndexError) as e:
+        logger.warning(f"Featherless explanation unavailable; using fallback explanation: {e}")
+        return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
+
+    if not text:
+        logger.warning("Featherless explanation returned empty content; using fallback explanation.")
+        return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     for prefix in ["Here are 3-4 short plain-language sentences", "Here is", "Here's"]:
         if text.lower().startswith(prefix.lower()):
