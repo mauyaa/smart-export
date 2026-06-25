@@ -880,4 +880,3 @@ async def extract_label(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
 
     return extract_label_with_vision(image_bytes, file.content_type, file.filename)
-PYEOF
