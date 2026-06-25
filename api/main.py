@@ -624,6 +624,8 @@ def check_fertilizer(request: Request, req: CheckRequest):
     cached = cache_get(cache_key)
     if cached:
         cached["matched_via"] = matched_via
+        if cached.get("risk_level") == "Risky" and not cached.get("alternative_product"):
+            cached["alternative_product"] = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
         return ResultCard(**cached)
 
     try:
