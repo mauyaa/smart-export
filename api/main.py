@@ -764,7 +764,15 @@ def guess_demo_product_name(filename: Optional[str]) -> str:
 def extract_known_product_from_filename(filename: Optional[str]) -> Optional[str]:
     compact_filename = compact_label_text(filename or "")
     for product_name in DEMO_PRODUCTS:
-        if compact_label_text(product_name) in compact_filename:
+        compact_product = compact_label_text(product_name)
+        product_tokens = [
+            compact_label_text(token)
+            for token in product_name.split()
+            if len(compact_label_text(token)) >= 4
+        ]
+        if compact_product in compact_filename or any(
+            token in compact_filename for token in product_tokens
+        ):
             return product_name
     return None
 
