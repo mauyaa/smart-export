@@ -761,6 +761,32 @@ def guess_demo_product_name(filename: Optional[str]) -> str:
     return "Orthene 75SP"
 
 
+def extract_known_product_from_filename(filename: Optional[str]) -> Optional[str]:
+    compact_filename = compact_label_text(filename or "")
+    for product_name in DEMO_PRODUCTS:
+        if compact_label_text(product_name) in compact_filename:
+            return product_name
+    return None
+
+
+def fallback_extract_label_response(filename: Optional[str], reason: str) -> ExtractLabelResponse:
+    product_name = extract_known_product_from_filename(filename)
+    substances = (
+        [
+            substance["name"]
+            for substance in DEMO_PRODUCTS.get(product_name, {}).get("substances", [])
+        ]
+        if product_name
+        else []
+    )
+    return ExtractLabelResponse(
+        product_name=product_name,
+        possible_ingredients=substances,
+        confidence="medium" if product_name else "low",
+        raw_model_output=reason,
+    )
+
+
 def extract_label_with_vision(
     image_bytes: bytes,
     content_type: str,
@@ -813,9 +839,9 @@ def extract_label_with_vision(
         raw_text = response.choices[0].message.content.strip()
     except (APIError, APIConnectionError) as e:
         logger.error(f"Featherless vision API error: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="Label extraction service is temporarily unavailable. Please retry or enter the product name manually."
+        return fallback_extract_label_response(
+            filename,
+            "Vision service unavailable; used filename fallback for known demo labels.",
         )
 
     # Defensive parsing — vision models sometimes wrap JSON in markdown fences
