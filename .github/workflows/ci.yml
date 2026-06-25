@@ -76,7 +76,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: front-end
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Lint
         working-directory: front-end
