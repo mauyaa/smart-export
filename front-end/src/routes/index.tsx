@@ -1058,17 +1058,21 @@ function Result({
   const theme = RISK_THEME[normalized];
   const verdictWord = t.result.verdict[normalized];
   const evidence = summarizeEvidence(result);
+  const fallbackExplanation = t.result.localizedExplanation[normalized](
+    result.fertilizer,
+    result.crop,
+    evidence.substance,
+    evidence.regulation,
+  );
   const explanation =
-    lang === "sw"
-      ? t.result.localizedExplanation[normalized](
-          result.fertilizer,
-          result.crop,
-          evidence.substance,
-          evidence.regulation,
-        )
-      : result.explanation;
+    lang === "sw" || normalized === "Safe" ? fallbackExplanation : result.explanation;
   const nextStep = lang === "sw" ? t.result.nextStep[normalized] : result.next_step;
   const needsReview = normalized === "Risky" || normalized === "Unclear";
+  const matchLabel = result.matched_via?.startsWith("fuzzy")
+    ? t.result.matchFuzzy
+    : result.matched_via === "manual_review"
+      ? t.result.matchReview
+      : t.result.matchExact;
 
   const shareUrl = useMemo(() => {
     const text = t.result.shareText(result.fertilizer, result.crop, verdictWord, explanation);
@@ -1141,7 +1145,7 @@ function Result({
 
       <Block label={t.result.matchLabel}>
         <p className="text-[12px] uppercase tracking-[0.18em] text-muted-foreground">
-          {result.matched_via?.startsWith("fuzzy") ? t.result.matchFuzzy : t.result.matchExact}
+          {matchLabel}
         </p>
       </Block>
 

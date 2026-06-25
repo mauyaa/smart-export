@@ -73,6 +73,7 @@ type Dict = {
     matchLabel: string;
     matchFuzzy: string;
     matchExact: string;
+    matchReview: string;
     again: string;
     expertReview: string;
     flag: string;
@@ -209,6 +210,7 @@ const en: Dict = {
     matchLabel: "Match",
     matchFuzzy: "Matched by fuzzy spelling",
     matchExact: "Exact match in dataset",
+    matchReview: "Needs expert review",
     again: "Check another product",
     expertReview: "Get expert review",
     flag: "Flag this verdict for expert review",
@@ -354,6 +356,7 @@ const sw: Dict = {
     matchLabel: "Mlinganisho",
     matchFuzzy: "Imelinganishwa kwa tahajia",
     matchExact: "Mlinganisho sahihi kwenye data",
+    matchReview: "Inahitaji ukaguzi wa mtaalamu",
     again: "Kagua bidhaa nyingine",
     expertReview: "Pata ukaguzi wa mtaalamu",
     flag: "Tuma jibu hili kwa mtaalamu",
