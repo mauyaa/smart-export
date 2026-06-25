@@ -24,7 +24,8 @@ type EventName =
   | "escalate_done"
   | "share_whatsapp"
   | "history_open"
-  | "lang_switch";
+  | "lang_switch"
+  | "sample_check";
 
 interface EventPayload {
   // Whitelisted fields only — never raw user input free-form.
@@ -35,6 +36,7 @@ interface EventPayload {
   status?: number;
   reason?: string;
   lang?: string;
+  confidence?: string;
 }
 
 interface StoredEvent {

@@ -33,12 +33,27 @@ export const Route = createFileRoute("/")({
 });
 
 type Step = "intro" | "capture" | "confirm" | "loading" | "result" | "escalate";
+type OcrConfidence = "high" | "medium" | "low" | null;
+
+type DemoSample = {
+  product: string;
+  crop: string;
+  risk: RiskLevel;
+};
+type AppText = ReturnType<typeof useI18n>["t"];
+
+const DEMO_SAMPLES: DemoSample[] = [
+  { product: "Orthene 75SP", crop: "French Beans", risk: "Risky" },
+  { product: "Muriate of Potash", crop: "Avocado", risk: "Safe" },
+  { product: "Unknown product", crop: "French Beans", risk: "Unclear" },
+];
 
 function SmartExportsApp() {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>("intro");
   const [photo, setPhoto] = useState<{ file: File; url: string } | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [ocrConfidence, setOcrConfidence] = useState<OcrConfidence>(null);
   const [product, setProduct] = useState("");
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [crop, setCrop] = useState<string>("");
@@ -79,6 +94,7 @@ function SmartExportsApp() {
     setPhoto(null);
     setProduct("");
     setIngredients([]);
+    setOcrConfidence(null);
     setCrop("");
     setResult(null);
     setError(null);
@@ -93,12 +109,28 @@ function SmartExportsApp() {
     setCrop(entry.crop);
     setPhoto(null);
     setIngredients([]);
+    setOcrConfidence(null);
     setResult(null);
     setError(null);
     setEscalated(null);
     setSlow(false);
     // Skip capture/confirm — go straight to the check.
     void runCheckWith(entry.product, entry.crop);
+  };
+
+  const runSample = (sample: DemoSample) => {
+    trackEvent("sample_check", { crop: sample.crop, risk: sample.risk });
+    abortAll();
+    setPhoto(null);
+    setProduct(sample.product);
+    setCrop(sample.crop);
+    setIngredients([]);
+    setOcrConfidence(null);
+    setResult(null);
+    setError(null);
+    setEscalated(null);
+    setSlow(false);
+    void runCheckWith(sample.product, sample.crop);
   };
 
   const runCheckWith = async (p: string, c: string) => {
@@ -115,6 +147,8 @@ function SmartExportsApp() {
       );
       if (signal.aborted) return;
       setResult(r);
+      setProduct(r.fertilizer);
+      setCrop(r.crop);
       setStep("result");
       recordCheck({ product: r.fertilizer, crop: r.crop, risk: normalizeRisk(r.risk_level) });
       trackEvent("check_result", { crop: r.crop, risk: r.risk_level, matched_via: r.matched_via });
@@ -122,7 +156,12 @@ function SmartExportsApp() {
       if (signal.aborted) return;
       if (e instanceof ApiError && e.status === 404) {
         trackEvent("check_not_found", { crop: c });
-        setStep("escalate");
+        const fallback = makeUnknownResult(p.trim(), c, t);
+        setResult(fallback);
+        setProduct(fallback.fertilizer);
+        setCrop(fallback.crop);
+        setStep("result");
+        recordCheck({ product: fallback.fertilizer, crop: fallback.crop, risk: "Unclear" });
         return;
       }
       if (e instanceof ApiError) {
@@ -145,6 +184,7 @@ function SmartExportsApp() {
   const onPhoto = async (raw: File) => {
     setError(null);
     setSlow(false);
+    setOcrConfidence(null);
     const file = await compressImage(raw);
     const url = URL.createObjectURL(file);
     setPhoto({ file, url });
@@ -157,16 +197,21 @@ function SmartExportsApp() {
         onSlow: () => setSlow(true),
       });
       if (signal.aborted) return;
+      const confidence = normalizeConfidence(r.confidence);
+      setOcrConfidence(confidence);
       setProduct(r.product_name ?? "");
       setIngredients(
         (r.possible_ingredients ?? []).filter(
           (s): s is string => typeof s === "string" && s.length > 0,
         ),
       );
-      if (!r.product_name) {
+      if (!r.product_name || confidence === "low") {
         setError(t.errors.ocrEmpty);
         trackEvent("ocr_empty");
-      } else trackEvent("ocr_success");
+      } else {
+        trackEvent("ocr_success", { confidence });
+        if (confidence === "high" && crop) void runCheckWith(r.product_name, crop);
+      }
     } catch (e) {
       if (signal.aborted) return;
       if (e instanceof ApiError) {
@@ -187,6 +232,13 @@ function SmartExportsApp() {
   };
 
   const runCheck = () => runCheckWith(product, crop);
+
+  const selectCrop = (nextCrop: string) => {
+    setCrop(nextCrop);
+    if (ocrConfidence === "high" && product.trim().length > 1) {
+      void runCheckWith(product, nextCrop);
+    }
+  };
 
   const submitEscalate = async (contact: string, notes: string) => {
     const { signal, done } = newSignal();
@@ -217,7 +269,11 @@ function SmartExportsApp() {
 
         <main className="flex-1">
           {step === "intro" && (
-            <Intro onStart={() => setStep("capture")} onPick={reCheckFromHistory} />
+            <Intro
+              onStart={() => setStep("capture")}
+              onPick={reCheckFromHistory}
+              onSample={runSample}
+            />
           )}
           {step === "capture" && (
             <Capture
@@ -235,7 +291,8 @@ function SmartExportsApp() {
               setProduct={setProduct}
               ingredients={ingredients}
               crop={crop}
-              setCrop={setCrop}
+              setCrop={selectCrop}
+              ocrConfidence={ocrConfidence}
               extracting={extracting}
               slow={slow}
               error={error}
@@ -245,6 +302,7 @@ function SmartExportsApp() {
                 setPhoto(null);
                 setProduct("");
                 setIngredients([]);
+                setOcrConfidence(null);
                 setStep("capture");
               }}
             />
@@ -366,7 +424,15 @@ function Footer() {
 
 /* ---------- 01 · Intro ---------- */
 
-function Intro({ onStart, onPick }: { onStart: () => void; onPick: (e: HistoryEntry) => void }) {
+function Intro({
+  onStart,
+  onPick,
+  onSample,
+}: {
+  onStart: () => void;
+  onPick: (e: HistoryEntry) => void;
+  onSample: (sample: DemoSample) => void;
+}) {
   const { t } = useI18n();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   useEffect(() => {
@@ -403,6 +469,34 @@ function Intro({ onStart, onPick }: { onStart: () => void; onPick: (e: HistoryEn
         <p className="mt-3 text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
           {t.intro.note}
         </p>
+      </div>
+
+      <div className="mt-8 rounded-md border border-border bg-card/70 p-4">
+        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+          {t.intro.samplesTitle}
+        </p>
+        <div className="mt-3 space-y-2">
+          {DEMO_SAMPLES.map((sample) => (
+            <button
+              key={`${sample.product}-${sample.crop}`}
+              onClick={() => onSample(sample)}
+              className="flex w-full items-center justify-between gap-3 rounded-sm border border-border bg-background px-3 py-2 text-left transition hover:border-foreground/40"
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-display text-[17px] leading-tight tracking-tight">
+                  {sample.product}
+                </span>
+                <span className="block text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                  {sample.crop}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                <RiskDot risk={sample.risk} />
+                {t.result.verdict[sample.risk]}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {history.length > 0 && (
@@ -659,6 +753,25 @@ function normalizeRisk(r: unknown): RiskLevel {
   return "Unclear";
 }
 
+function makeUnknownResult(product: string, crop: string, t: AppText): ResultCard {
+  return {
+    fertilizer: product || t.result.unknownProduct,
+    crop,
+    risk_level: "Unclear",
+    explanation: t.result.unknownExplanation(product || t.result.unknownProduct, crop),
+    next_step: t.result.nextStep.Unclear,
+    alternative_product: null,
+    evidence: {},
+    matched_via: "manual_review",
+  };
+}
+
+function normalizeConfidence(value: unknown): Exclude<OcrConfidence, null> {
+  const s = String(value ?? "").toLowerCase();
+  if (s === "high" || s === "medium" || s === "low") return s;
+  return "low";
+}
+
 /* ---------- 03 · Confirm ---------- */
 
 function Confirm({
@@ -668,6 +781,7 @@ function Confirm({
   ingredients,
   crop,
   setCrop,
+  ocrConfidence,
   extracting,
   slow,
   error,
@@ -680,6 +794,7 @@ function Confirm({
   ingredients: string[];
   crop: string;
   setCrop: (s: string) => void;
+  ocrConfidence: OcrConfidence;
   extracting: boolean;
   slow: boolean;
   error: string | null;
@@ -724,6 +839,7 @@ function Confirm({
               {t.loading.waking}
             </p>
           )}
+          {!extracting && ocrConfidence && <ConfidenceNotice confidence={ocrConfidence} />}
         </Field>
 
         {ingredients.length > 0 && (
@@ -784,6 +900,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </p>
       <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function ConfidenceNotice({ confidence }: { confidence: Exclude<OcrConfidence, null> }) {
+  const { t } = useI18n();
+  const tone =
+    confidence === "high"
+      ? "border-[color:var(--safe)] bg-[color:var(--safe-soft)] text-[color:var(--safe)]"
+      : confidence === "medium"
+        ? "border-[color:var(--unclear)] bg-[color:var(--unclear-soft)] text-[color:var(--unclear)]"
+        : "border-[color:var(--risky)] bg-[color:var(--risky-soft)] text-[color:var(--risky)]";
+  return (
+    <div className={`mt-3 rounded-sm border px-3 py-2 ${tone}`}>
+      <p className="text-[10px] font-medium uppercase tracking-[0.18em]">
+        {t.confirm.confidence[confidence].label}
+      </p>
+      <p className="mt-1 text-[12px] leading-relaxed text-foreground">
+        {t.confirm.confidence[confidence].body}
+      </p>
     </div>
   );
 }
@@ -860,6 +996,50 @@ const RISK_THEME: Record<RiskLevel, { bg: string; fg: string; bar: string }> = {
   },
 };
 
+type EvidenceHit = Record<string, unknown>;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function evidenceHits(evidence: Record<string, unknown>, key: string): EvidenceHit[] {
+  const value = evidence[key];
+  return Array.isArray(value)
+    ? value.filter((hit): hit is EvidenceHit => Boolean(asRecord(hit)))
+    : [];
+}
+
+function summarizeEvidence(result: ResultCard) {
+  const regulatoryHits = evidenceHits(result.evidence, "regulatoryHits");
+  const rejectionHits = evidenceHits(result.evidence, "rejectionHits");
+  const organicHits = evidenceHits(result.evidence, "organicHits");
+  const hit = regulatoryHits[0] ?? rejectionHits[0] ?? organicHits[0] ?? null;
+  const restriction = asRecord(hit?.restriction);
+  const rejection = asRecord(hit?.rejectionCase);
+  const organic = asRecord(hit?.organicRestriction);
+  const limit = restriction?.limit;
+  const unit = textValue(restriction?.unit);
+
+  return {
+    substance: textValue(hit?.substance),
+    regulation:
+      textValue(restriction?.regulationName) ??
+      textValue(restriction?.regulationCode) ??
+      textValue(organic?.regulationCode),
+    limit:
+      limit !== undefined && limit !== null ? `${String(limit)}${unit ? ` ${unit}` : ""}` : null,
+    rejection: textValue(rejection?.summary),
+    hasRejection: rejectionHits.length > 0,
+    organicNote: textValue(organic?.note),
+  };
+}
+
 function Result({
   result,
   onAgain,
@@ -869,7 +1049,7 @@ function Result({
   onAgain: () => void;
   onEscalate: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   // Normalize risk level defensively (some backends may capitalize differently).
   const normalized =
     (["Safe", "Risky", "Unclear"] as RiskLevel[]).find(
@@ -877,16 +1057,23 @@ function Result({
     ) ?? "Unclear";
   const theme = RISK_THEME[normalized];
   const verdictWord = t.result.verdict[normalized];
+  const evidence = summarizeEvidence(result);
+  const explanation =
+    lang === "sw"
+      ? t.result.localizedExplanation[normalized](
+          result.fertilizer,
+          result.crop,
+          evidence.substance,
+          evidence.regulation,
+        )
+      : result.explanation;
+  const nextStep = lang === "sw" ? t.result.nextStep[normalized] : result.next_step;
+  const needsReview = normalized === "Risky" || normalized === "Unclear";
 
   const shareUrl = useMemo(() => {
-    const text = t.result.shareText(
-      result.fertilizer,
-      result.crop,
-      verdictWord,
-      result.explanation,
-    );
+    const text = t.result.shareText(result.fertilizer, result.crop, verdictWord, explanation);
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
-  }, [result, verdictWord, t]);
+  }, [explanation, result, verdictWord, t]);
 
   return (
     <section className="animate-fade-up pt-6">
@@ -901,22 +1088,56 @@ function Result({
           <h2 className={"mt-2 font-display text-[64px] leading-[0.9] tracking-tight " + theme.fg}>
             {verdictWord}.
           </h2>
-          <p className="mt-4 text-[14px] leading-relaxed text-foreground">{result.explanation}</p>
+          <span
+            className={
+              "mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] " +
+              theme.fg
+            }
+          >
+            <span className={"h-2 w-2 rounded-full " + theme.bar} />
+            {verdictWord}
+          </span>
+          <p className="mt-4 text-[14px] leading-relaxed text-foreground">{explanation}</p>
         </div>
       </div>
 
+      {(evidence.substance || evidence.regulation || evidence.limit) && (
+        <Block label={t.result.flaggedLabel}>
+          <div className="space-y-3 text-[14px] leading-relaxed">
+            {evidence.substance && (
+              <p>
+                <span className="font-medium">{t.result.containsLabel}:</span> {evidence.substance}
+              </p>
+            )}
+            {evidence.regulation && (
+              <p>
+                <span className="font-medium">{t.result.regulationLabel}:</span>{" "}
+                {evidence.regulation}
+              </p>
+            )}
+            {evidence.limit && (
+              <p>
+                <span className="font-medium">{t.result.limitLabel}:</span> {evidence.limit}
+              </p>
+            )}
+          </div>
+        </Block>
+      )}
+
       <Block label={t.result.nextLabel}>
-        <p className="text-[14px] leading-relaxed">{result.next_step}</p>
+        <p className="text-[14px] leading-relaxed">{nextStep}</p>
       </Block>
 
       {result.alternative_product && (
         <Block label={t.result.altLabel}>
           <p className="font-display text-[24px] leading-tight tracking-tight">
-            {result.alternative_product}
+            {t.result.consider(result.alternative_product)}
           </p>
           <p className="mt-1 text-[12px] text-muted-foreground">{t.result.altSub(result.crop)}</p>
         </Block>
       )}
+
+      <EvidenceDetails evidence={evidence} />
 
       <Block label={t.result.matchLabel}>
         <p className="text-[12px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -925,7 +1146,13 @@ function Result({
       </Block>
 
       <div className="mt-10 space-y-3">
-        <PrimaryButton onClick={onAgain}>{t.result.again}</PrimaryButton>
+        {needsReview && <PrimaryButton onClick={onEscalate}>{t.result.expertReview}</PrimaryButton>}
+        <button
+          onClick={onAgain}
+          className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-foreground/15 bg-card text-[13px] font-medium tracking-tight text-foreground transition hover:border-foreground/40"
+        >
+          {t.result.again}
+        </button>
         <a
           href={shareUrl}
           target="_blank"
@@ -936,14 +1163,51 @@ function Result({
           <WhatsAppIcon className="mr-2 h-4 w-4" />
           {t.result.share}
         </a>
-        <button
-          onClick={onEscalate}
-          className="block w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
-        >
-          {t.result.flag}
-        </button>
+        {!needsReview && (
+          <button
+            onClick={onEscalate}
+            className="block w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+          >
+            {t.result.flag}
+          </button>
+        )}
       </div>
     </section>
+  );
+}
+
+function EvidenceDetails({ evidence }: { evidence: ReturnType<typeof summarizeEvidence> }) {
+  const { t } = useI18n();
+  if (!evidence.regulation && !evidence.limit && !evidence.rejection && !evidence.organicNote) {
+    return null;
+  }
+  return (
+    <details className="mt-8 rounded-sm border border-border bg-card px-4 py-3">
+      <summary className="cursor-pointer text-[12px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        {t.result.detailsTitle}
+      </summary>
+      <div className="mt-4 space-y-3">
+        <DetailRow label={t.result.regulationLabel} value={evidence.regulation} />
+        <DetailRow label={t.result.limitLabel} value={evidence.limit} />
+        <DetailRow
+          label={t.result.rejectionLabel}
+          value={evidence.rejection ?? t.result.rejectionNo}
+        />
+        <DetailRow label={t.result.organicLabel} value={evidence.organicNote} />
+      </div>
+    </details>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-[13px] leading-relaxed">{value}</p>
+    </div>
   );
 }
 

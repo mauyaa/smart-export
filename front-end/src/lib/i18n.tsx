@@ -18,6 +18,7 @@ type Dict = {
     bullets: { title: string; body: string }[];
     cta: string;
     note: string;
+    samplesTitle: string;
   };
   capture: {
     kicker: string;
@@ -44,18 +45,36 @@ type Dict = {
     cropLabel: string;
     alsoSeen: string;
     cta: string;
+    confidence: Record<"high" | "medium" | "low", { label: string; body: string }>;
   };
   loading: { title: (p: string, c: string) => string; steps: string[]; waking: string };
   result: {
     kicker: string;
     verdict: { Safe: string; Risky: string; Unclear: string };
+    nextStep: Record<"Safe" | "Risky" | "Unclear", string>;
+    localizedExplanation: Record<
+      "Safe" | "Risky" | "Unclear",
+      (p: string, c: string, substance: string | null, regulation: string | null) => string
+    >;
+    unknownProduct: string;
+    unknownExplanation: (p: string, c: string) => string;
+    flaggedLabel: string;
+    containsLabel: string;
+    regulationLabel: string;
+    limitLabel: string;
+    detailsTitle: string;
+    rejectionLabel: string;
+    rejectionNo: string;
+    organicLabel: string;
     nextLabel: string;
     altLabel: string;
+    consider: (product: string) => string;
     altSub: (crop: string) => string;
     matchLabel: string;
     matchFuzzy: string;
     matchExact: string;
     again: string;
+    expertReview: string;
     flag: string;
     share: string;
     shareText: (p: string, c: string, verdict: string, expl: string) => string;
@@ -98,6 +117,7 @@ const en: Dict = {
     ],
     cta: "Start a check",
     note: "Takes about 20 seconds",
+    samplesTitle: "Try a sample",
   },
   capture: {
     kicker: "Photograph",
@@ -129,6 +149,20 @@ const en: Dict = {
     cropLabel: "Crop you're growing for export",
     alsoSeen: "Also seen on the label",
     cta: "Check compliance",
+    confidence: {
+      high: {
+        label: "High confidence",
+        body: "We read the product clearly. Pick the crop and we will check it automatically.",
+      },
+      medium: {
+        label: "Medium confidence",
+        body: "Check the extracted name before continuing. Edit it if the label was read wrongly.",
+      },
+      low: {
+        label: "Low confidence",
+        body: "We could not read this label clearly. Type the product name from the label.",
+      },
+    },
   },
   loading: {
     title: (p, c) => `Checking ${p} for ${c}…`,
@@ -143,13 +177,40 @@ const en: Dict = {
   result: {
     kicker: "Verdict",
     verdict: { Safe: "Safe", Risky: "Risky", Unclear: "Unclear" },
+    nextStep: {
+      Safe: "Proceed with application as planned. Keep the label and batch record with your farm notes.",
+      Risky:
+        "Avoid this product for export-bound crops. Use the suggested alternative or request expert review.",
+      Unclear: "Do not assume safety. Send this product for expert review before applying.",
+    },
+    localizedExplanation: {
+      Safe: (p, c) =>
+        `The current dataset does not show an EU restriction or Kenyan rejection case for ${p} on ${c}. Keep the label and follow the recommended rate.`,
+      Risky: (p, c, substance, regulation) =>
+        `${p} is flagged as Risky for ${c}${substance ? ` because it contains ${substance}` : ""}${regulation ? ` under ${regulation}` : ""}. Do not apply it to export-bound ${c} until an agronomist confirms it is acceptable.`,
+      Unclear: (p, c) =>
+        `We do not have enough trusted data for ${p} on ${c}. Treat it as Unclear and request expert review before using it on export crops.`,
+    },
+    unknownProduct: "Unknown product",
+    unknownExplanation: (p, c) =>
+      `${p} is not in the current compliance dataset for ${c}. This does not prove it is safe, so treat it as Unclear and send it for expert review.`,
+    flaggedLabel: "Flagged evidence",
+    containsLabel: "Contains",
+    regulationLabel: "Regulation",
+    limitLabel: "EU limit",
+    detailsTitle: "See details",
+    rejectionLabel: "Rejection case",
+    rejectionNo: "No rejection case is linked in the current evidence.",
+    organicLabel: "Organic restriction",
     nextLabel: "What to do next",
     altLabel: "Suggested alternative",
+    consider: (product) => `Consider: ${product} instead`,
     altSub: (crop) => `A product with comparable nutrition that fits EU rules for ${crop}.`,
     matchLabel: "Match",
     matchFuzzy: "Matched by fuzzy spelling",
     matchExact: "Exact match in dataset",
     again: "Check another product",
+    expertReview: "Get expert review",
     flag: "Flag this verdict for expert review",
     share: "Share on WhatsApp",
     shareText: (p, c, v, e) =>
@@ -201,6 +262,7 @@ const sw: Dict = {
     ],
     cta: "Anza ukaguzi",
     note: "Inachukua takriban sekunde 20",
+    samplesTitle: "Jaribu mfano",
   },
   capture: {
     kicker: "Picha",
@@ -232,6 +294,20 @@ const sw: Dict = {
     cropLabel: "Zao unalolima kwa kuuza nje",
     alsoSeen: "Pia tumeona kwenye lebo",
     cta: "Kagua uzingatiaji",
+    confidence: {
+      high: {
+        label: "Uhakika mkubwa",
+        body: "Tumesoma bidhaa vizuri. Chagua zao kisha tutaikagua moja kwa moja.",
+      },
+      medium: {
+        label: "Uhakika wa kati",
+        body: "Angalia jina tulilosoma kabla ya kuendelea. Lirekebishe kama si sahihi.",
+      },
+      low: {
+        label: "Uhakika mdogo",
+        body: "Hatukuweza kusoma lebo vizuri. Andika jina la bidhaa kutoka kwenye lebo.",
+      },
+    },
   },
   loading: {
     title: (p, c) => `Inaangalia ${p} kwa ${c}…`,
@@ -246,13 +322,40 @@ const sw: Dict = {
   result: {
     kicker: "Jibu",
     verdict: { Safe: "Salama", Risky: "Hatari", Unclear: "Si Wazi" },
+    nextStep: {
+      Safe: "Endelea kutumia kama ulivyopanga. Hifadhi lebo na kumbukumbu za shamba.",
+      Risky:
+        "Usitumie bidhaa hii kwa mazao ya kuuza nje. Tumia mbadala uliopendekezwa au omba ukaguzi wa mtaalamu.",
+      Unclear: "Usidhani ni salama. Itume kwa mtaalamu kabla ya kuitumia.",
+    },
+    localizedExplanation: {
+      Safe: (p, c) =>
+        `Data tuliyo nayo haionyeshi kizuizi cha EU au kesi ya kukataliwa kwa ${p} kwenye ${c}. Hifadhi lebo na fuata kiwango kilichoelekezwa.`,
+      Risky: (p, c, substance, regulation) =>
+        `${p} imeonekana kuwa Hatari kwa ${c}${substance ? ` kwa sababu ina ${substance}` : ""}${regulation ? ` chini ya ${regulation}` : ""}. Usiitumie kwa ${c} ya kuuza nje mpaka mtaalamu athibitishe.`,
+      Unclear: (p, c) =>
+        `Hatuna data ya kutosha kuhusu ${p} kwenye ${c}. Ichukulie kama Si Wazi na omba ukaguzi wa mtaalamu kabla ya kuitumia.`,
+    },
+    unknownProduct: "Bidhaa isiyojulikana",
+    unknownExplanation: (p, c) =>
+      `${p} haipo kwenye data yetu ya ${c}. Hii haimaanishi ni salama, kwa hivyo ichukulie kama Si Wazi na itume kwa mtaalamu.`,
+    flaggedLabel: "Ushahidi uliopatikana",
+    containsLabel: "Ina",
+    regulationLabel: "Sheria",
+    limitLabel: "Kiwango cha EU",
+    detailsTitle: "Ona maelezo",
+    rejectionLabel: "Kesi ya kukataliwa",
+    rejectionNo: "Hakuna kesi ya kukataliwa iliyounganishwa kwenye ushahidi huu.",
+    organicLabel: "Kizuizi cha kilimo hai",
     nextLabel: "Hatua inayofuata",
     altLabel: "Mbadala iliyopendekezwa",
+    consider: (product) => `Fikiria kutumia: ${product}`,
     altSub: (crop) => `Bidhaa yenye virutubisho sawa inayokidhi sheria za EU kwa ${crop}.`,
     matchLabel: "Mlinganisho",
     matchFuzzy: "Imelinganishwa kwa tahajia",
     matchExact: "Mlinganisho sahihi kwenye data",
     again: "Kagua bidhaa nyingine",
+    expertReview: "Pata ukaguzi wa mtaalamu",
     flag: "Tuma jibu hili kwa mtaalamu",
     share: "Shiriki kwenye WhatsApp",
     shareText: (p, c, v, e) =>
