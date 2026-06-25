@@ -1153,7 +1153,7 @@ function Result({
         {needsReview && <PrimaryButton onClick={onEscalate}>{t.result.expertReview}</PrimaryButton>}
         <button
           onClick={onAgain}
-          className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-foreground/15 bg-card text-[13px] font-medium tracking-tight text-foreground transition hover:border-foreground/40"
+          className="flex h-12 w-full items-center justify-center rounded-sm border border-foreground/15 bg-card text-[13px] font-medium tracking-tight text-foreground transition hover:border-foreground/40"
         >
           {t.result.again}
         </button>
@@ -1162,7 +1162,7 @@ function Result({
           target="_blank"
           rel="noreferrer noopener"
           onClick={() => trackEvent("share_whatsapp", { risk: normalized })}
-          className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-foreground/15 bg-card text-[13px] font-medium tracking-tight text-foreground transition hover:border-foreground/40"
+          className="flex h-12 w-full items-center justify-center rounded-sm border border-foreground/15 bg-card text-[13px] font-medium tracking-tight text-foreground transition hover:border-foreground/40"
         >
           <WhatsAppIcon className="mr-2 h-4 w-4" />
           {t.result.share}
@@ -1386,7 +1386,7 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="group inline-flex h-14 w-full items-center justify-center gap-2 rounded-sm bg-foreground px-6 text-[14px] font-medium tracking-tight text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-40"
+      className="group flex h-14 w-full items-center justify-center gap-2 rounded-sm bg-foreground px-6 text-[14px] font-medium tracking-tight text-background transition hover:bg-foreground/90 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
