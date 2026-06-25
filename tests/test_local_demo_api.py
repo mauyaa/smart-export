@@ -100,3 +100,36 @@ def test_explanation_falls_back_when_model_returns_empty(monkeypatch):
 
     assert "Orthene 75SP is flagged as Risky for French beans" in explanation
     assert "EU MRL Pesticides" in explanation
+
+
+def test_risky_check_uses_curated_alternative_when_graph_has_none(monkeypatch):
+    monkeypatch.setattr(main, "DEMO_MODE", False)
+    monkeypatch.setattr(main, "resolve_fertilizer_name", lambda name: ("Orthene 75SP", "exact"))
+    monkeypatch.setattr(main, "resolve_crop_name", lambda crop: "French beans")
+    monkeypatch.setattr(
+        main,
+        "get_risk_match",
+        lambda _fertilizer, _crop: {
+            "fertilizer": "Orthene 75SP",
+            "crop": "French beans",
+            "riskLevel": "Risky",
+            "regulatoryHits": [],
+            "rejectionHits": [],
+            "organicHits": [],
+        },
+    )
+    monkeypatch.setattr(main, "get_explanation_path", lambda _fertilizer: [])
+    monkeypatch.setattr(
+        main,
+        "generate_grounded_explanation",
+        lambda _fertilizer, _crop, _risk, _evidence: "Fallback explanation.",
+    )
+    monkeypatch.setattr(main, "get_alternative", lambda _fertilizer, _crop: None)
+
+    response = client.post(
+        "/check",
+        json={"fertilizer_name": "Orthene 75SP", "crop_name": "French beans"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["alternative_product"] == "Muriate of Potash"

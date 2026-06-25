@@ -62,6 +62,7 @@ class TestCheck:
         assert data["risk_level"] == "Risky"
         assert data["fertilizer"] == "Orthene 75SP"
         assert data["crop"] == "French beans"
+        assert data["alternative_product"]
 
     def test_risky_product_has_evidence(self):
         r = api_post("/check", {
@@ -126,7 +127,7 @@ class TestCheck:
         })
         data = r.json()
         for field in ["fertilizer", "crop", "risk_level", "explanation",
-                      "next_step", "evidence", "matched_via"]:
+                      "next_step", "alternative_product", "evidence", "matched_via"]:
             assert field in data, f"Missing required field: {field}"
 
     def test_risk_level_is_valid_value(self):

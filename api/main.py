@@ -663,6 +663,8 @@ def check_fertilizer(request: Request, req: CheckRequest):
                 alt = alt_result.get("alternativeProduct")
         except (ServiceUnavailable, Neo4jError) as e:
             logger.warning(f"Neo4j error during alternative lookup (non-fatal): {e}")
+        if not alt:
+            alt = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
 
     raw_evidence = {
         "regulatoryHits": match.get("regulatoryHits", []),
