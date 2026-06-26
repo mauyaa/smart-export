@@ -742,6 +742,58 @@ def get_crops(q: Optional[str] = None):
         "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
     }
 
+# ---------------------------------------------------------------------------
+# USSD Handler — Africa's Talking integration
+# Callback URL to set in AT dashboard:
+# https://smartexports-api.onrender.com/ussd
+# ---------------------------------------------------------------------------
+from ussd_handler import handle_ussd as _handle_ussd
+
+AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
+AT_API_KEY = os.environ.get("AT_API_KEY")
+
+
+def _ussd_risk_check(fertilizer_name: str, crop_name: str):
+    """Wrapper so USSD handler can call Neo4j without knowing internals."""
+    try:
+        resolved, _ = resolve_fertilizer_name(fertilizer_name)
+        match = get_risk_match(resolved, crop_name)
+        if not match or not match.get("fertilizer"):
+            return None
+        alt = None
+        if match.get("riskLevel") == "Risky":
+            alt_result = get_alternative(resolved, crop_name)
+            if alt_result:
+                alt = alt_result.get("alternativeProduct")
+        return {
+            "fertilizer": match.get("fertilizer"),
+            "risk_level": match.get("riskLevel"),
+            "alternative_product": alt,
+        }
+    except Exception as e:
+        logger.error(f"USSD risk check error: {e}")
+        return None
+
+
+@app.post("/ussd")
+async def ussd_callback(request: Request):
+    """
+    Africa's Talking USSD callback endpoint.
+    AT sends form data: sessionId, phoneNumber, networkCode, text
+    We return plain text starting with CON (continue) or END (terminate).
+    """
+    form = await request.form()
+    session_id = form.get("sessionId", "")
+    phone = form.get("phoneNumber", "")
+    text = form.get("text", "")
+
+    logger.info(f"USSD session={session_id} phone={phone} text={text!r}")
+
+    response_text = _handle_ussd(session_id, phone, text, _ussd_risk_check)
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(content=response_text)
+
 @app.get("/")
 def root():
     return {
