@@ -6,7 +6,10 @@ CROPS = [
 def parse_level(text):
     if not text or text.strip() == "":
         return []
-    return [t.strip() for t in text.strip().split("*") if t.strip()]
+    # AT sends text as cumulative input joined by *
+    # e.g. first input "1", second input "1*Orthene 75SP"
+    parts = text.strip().split("*")
+    return [t.strip() for t in parts if t.strip() != ""]
 
 def handle_ussd(session_id, phone, text, risk_check_fn):
     steps = parse_level(text)
@@ -19,7 +22,8 @@ def handle_ussd(session_id, phone, text, risk_check_fn):
                 "2. What is SmartExports?\n"
                 "3. Talk to an expert")
 
-    choice = steps[0]
+    # Normalize choice
+    choice = steps[0].strip()
 
     if choice == "2":
         return ("END SmartExports checks if your\n"
@@ -45,7 +49,7 @@ def handle_ussd(session_id, phone, text, risk_check_fn):
                     "(e.g. Orthene 75SP)\n\n"
                     "Type name as shown on the bag:")
 
-        fertilizer_name = steps[1]
+        fertilizer_name = steps[1].strip()
 
         if level == 2:
             crop_menu = "\n".join([f"{i+1}. {c}" for i, c in enumerate(CROPS)])
@@ -53,7 +57,7 @@ def handle_ussd(session_id, phone, text, risk_check_fn):
                     f"Select export crop:\n{crop_menu}")
 
         if level == 3:
-            crop_choice = steps[2]
+            crop_choice = steps[2].strip()
             try:
                 idx = int(crop_choice) - 1
                 if idx == len(CROPS) - 1:
@@ -95,17 +99,17 @@ def handle_ussd(session_id, phone, text, risk_check_fn):
                         f"9. Check another product")
 
         if level >= 4:
-            post = steps[3]
+            post = steps[3].strip()
             if post == "9":
                 return "CON Enter another fertilizer name:"
             if post == "0":
                 try:
-                    idx = int(steps[2]) - 1
-                    crop_name = CROPS[idx] if 0 <= idx < len(CROPS) - 1 else steps[2]
+                    idx = int(steps[2].strip()) - 1
+                    crop_name = CROPS[idx] if 0 <= idx < len(CROPS) - 1 else steps[2].strip()
                 except ValueError:
-                    crop_name = steps[2]
+                    crop_name = steps[2].strip()
                 return (f"END Sent for expert review.\n\n"
-                        f"Product: {steps[1]}\n"
+                        f"Product: {steps[1].strip()}\n"
                         f"Crop: {crop_name}\n"
                         f"Phone: {phone}\n\n"
                         f"Agronomist will contact\n"
