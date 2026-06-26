@@ -702,6 +702,46 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
         "message": "Your request has been logged for expert review. "
                     "Live reviewer routing is not yet active in this prototype."
     }
+
+@app.get("/crops")
+def get_crops(q: Optional[str] = None):
+    """
+    Returns all crops in the compliance graph.
+    Optional ?q= parameter for fuzzy search.
+    Powers the frontend searchable crop input.
+    If a crop is not in the list, the frontend should still
+    allow free-text entry — /check handles unknown crops
+    gracefully with an Unclear verdict.
+    """
+    with driver.session() as session:
+        rows = session.execute_read(
+            run_query, "MATCH (c:Crop) RETURN c.name AS name ORDER BY c.name"
+        )
+    all_crops = [r["name"] for r in rows]
+
+    if q:
+        normalized_q = normalize_name(q)
+        # Exact prefix match first
+        prefix_matches = [c for c in all_crops if normalize_name(c).startswith(normalized_q)]
+        # Then fuzzy matches
+        fuzzy_matches = difflib.get_close_matches(normalized_q, [normalize_name(c) for c in all_crops], n=5, cutoff=0.4)
+        fuzzy_original = [c for c in all_crops if normalize_name(c) in fuzzy_matches]
+        # Combine, deduplicate, preserve order
+        combined = prefix_matches + [c for c in fuzzy_original if c not in prefix_matches]
+        return {
+            "crops": combined,
+            "total": len(combined),
+            "query": q,
+            "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
+        }
+
+    return {
+        "crops": all_crops,
+        "total": len(all_crops),
+        "query": None,
+        "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
+    }
+
 @app.get("/")
 def root():
     return {

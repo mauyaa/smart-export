@@ -158,6 +158,27 @@ class TestEscalate:
         })
         assert r.status_code == 200
 
+class TestCrops:
+    def test_crops_returns_list(self):
+        r = api_get("/crops")
+        assert r.status_code == 200
+        data = r.json()
+        assert "crops" in data
+        assert len(data["crops"]) >= 11
+
+    def test_crops_search_returns_results(self):
+        r = api_get("/crops?q=french")
+        assert r.status_code == 200
+        data = r.json()
+        assert any("French" in c for c in data["crops"])
+
+    def test_crops_unknown_query_returns_empty_not_error(self):
+        r = api_get("/crops?q=xyzunknowncrop999")
+        assert r.status_code == 200
+        data = r.json()
+        assert "crops" in data
+        assert "note" in data
+
 
 class TestCORS:
     def test_cors_header_present(self):
