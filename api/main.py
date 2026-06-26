@@ -747,6 +747,9 @@ def get_crops(q: Optional[str] = None):
 # Callback URL to set in AT dashboard:
 # https://smartexports-api.onrender.com/ussd
 # ---------------------------------------------------------------------------
+import sys
+import os as _os
+sys.path.insert(0, _os.path.dirname(__file__))
 from ussd_handler import handle_ussd as _handle_ussd
 
 AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
@@ -793,6 +796,7 @@ async def ussd_callback(request: Request):
 
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(content=response_text)
+
 
 @app.get("/")
 def root():
