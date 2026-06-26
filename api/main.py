@@ -703,6 +703,7 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
                     "Live reviewer routing is not yet active in this prototype."
     }
 
+
 @app.get("/crops")
 def get_crops(q: Optional[str] = None):
     """
@@ -742,6 +743,7 @@ def get_crops(q: Optional[str] = None):
         "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
     }
 
+
 # ---------------------------------------------------------------------------
 # USSD Handler — Africa's Talking integration
 # Callback URL to set in AT dashboard:
@@ -776,6 +778,7 @@ def _ussd_risk_check(fertilizer_name: str, crop_name: str):
     except Exception as e:
         logger.error(f"USSD risk check error: {e}")
         return None
+
 
 
 @app.post("/ussd")
