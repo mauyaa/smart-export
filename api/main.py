@@ -14,6 +14,10 @@ Flow per request:
 Run with: uvicorn main:app --reload --port 8000
 Production GraphRAG env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, FEATHERLESS_API_KEY
 Use SMARTEXPORTS_DEMO_MODE=true for local startup without production secrets.
+
+Explanation provider is configurable: set EXPLANATION_PROVIDER=anthropic (with
+ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
+Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
 import os
@@ -69,6 +73,8 @@ NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.getenv("FEATHERLESS_MODEL", "").strip() or "Qwen/Qwen2.5-7B-Instruct"
 FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
+EXPLANATION_PROVIDER = os.environ.get("EXPLANATION_PROVIDER", "featherless").lower()
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 DEFAULT_CORS_ORIGINS_LIST = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -585,21 +591,34 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
     )
 
     try:
-        response = llm_client.chat.completions.create(
-            model=FEATHERLESS_MODEL,
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        text = (response.choices[0].message.content or "").strip()
+        if EXPLANATION_PROVIDER == "anthropic":
+            from anthropic import Anthropic
+            anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+            msg = anthropic_client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=300,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            text = "".join(
+                b.text for b in msg.content if getattr(b, "type", None) == "text"
+            ).strip()
+        else:
+            response = llm_client.chat.completions.create(
+                model=FEATHERLESS_MODEL,
+                max_tokens=300,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            text = (response.choices[0].message.content or "").strip()
     except (APIError, APIConnectionError, AttributeError, IndexError) as e:
-        logger.warning(f"Featherless explanation unavailable; using fallback explanation: {e}")
+        logger.warning(f"Explanation provider unavailable; using fallback explanation: {e}")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     if not text:
-        logger.warning("Featherless explanation returned empty content; using fallback explanation.")
+        logger.warning("Explanation provider returned empty content; using fallback explanation.")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     for prefix in ["Here are 3-4 short plain-language sentences", "Here is", "Here's"]:
