@@ -770,7 +770,9 @@ The farmer will be contacted at: {req.farmer_contact or 'No contact provided'}
     msg.attach(MIMEText(email_body, "plain"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
             server.login(SMTP_EMAIL, SMTP_PASSWORD)
             server.sendmail(SMTP_EMAIL, EXPERT_EMAIL, msg.as_string())
         logger.info(f"Escalation email sent to {EXPERT_EMAIL}")
