@@ -14,6 +14,10 @@ Flow per request:
 Run with: uvicorn main:app --reload --port 8000
 Production GraphRAG env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, FEATHERLESS_API_KEY
 Use SMARTEXPORTS_DEMO_MODE=true for local startup without production secrets.
+
+Explanation provider is configurable: set EXPLANATION_PROVIDER=anthropic (with
+ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
+Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
 import os
@@ -69,6 +73,11 @@ NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.getenv("FEATHERLESS_MODEL", "").strip() or "Qwen/Qwen2.5-7B-Instruct"
 FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EXPERT_EMAIL = os.environ.get("EXPERT_EMAIL", "")
+EXPLANATION_PROVIDER = os.environ.get("EXPLANATION_PROVIDER", "featherless").lower()
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 DEFAULT_CORS_ORIGINS_LIST = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -138,6 +147,7 @@ class EscalateRequest(BaseModel):
     crop_name: str
     farmer_contact: Optional[str] = None
     notes: Optional[str] = None
+    location: Optional[str] = None
 
 
 _CACHE: dict = {}
@@ -585,21 +595,34 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
     )
 
     try:
-        response = llm_client.chat.completions.create(
-            model=FEATHERLESS_MODEL,
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        text = (response.choices[0].message.content or "").strip()
+        if EXPLANATION_PROVIDER == "anthropic":
+            from anthropic import Anthropic
+            anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+            msg = anthropic_client.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=300,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            text = "".join(
+                b.text for b in msg.content if getattr(b, "type", None) == "text"
+            ).strip()
+        else:
+            response = llm_client.chat.completions.create(
+                model=FEATHERLESS_MODEL,
+                max_tokens=300,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            text = (response.choices[0].message.content or "").strip()
     except (APIError, APIConnectionError, AttributeError, IndexError) as e:
-        logger.warning(f"Featherless explanation unavailable; using fallback explanation: {e}")
+        logger.warning(f"Explanation provider unavailable; using fallback explanation: {e}")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     if not text:
-        logger.warning("Featherless explanation returned empty content; using fallback explanation.")
+        logger.warning("Explanation provider returned empty content; using fallback explanation.")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     for prefix in ["Here are 3-4 short plain-language sentences", "Here is", "Here's"]:
@@ -690,6 +713,73 @@ def check_fertilizer(request: Request, req: CheckRequest):
     return ResultCard(**result)
 
 
+def _send_escalation_email(req: EscalateRequest, substance_info: list):
+    """
+    Sends escalation notification to expert pool inbox.
+    Includes all farmer context so coordinator can route to right expert.
+    """
+    if not SMTP_EMAIL or not SMTP_PASSWORD or not EXPERT_EMAIL:
+        logger.warning("Email not configured — escalation logged but not emailed.")
+        return
+
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    substance_lines = ""
+    if substance_info:
+        for s in substance_info:
+            substance_lines += (
+                f"\n  - {s.get('substance', 'Unknown')} "
+                f"(category: {s.get('category', 'unknown')}, "
+                f"evidence degree: {s.get('evidence', 0)})"
+            )
+    else:
+        substance_lines = "\n  - Not found in database (reason for escalation)"
+
+    email_body = f"""
+SmartExports — Expert Review Request
+=====================================
+
+FARMER REQUEST DETAILS
+----------------------
+Fertilizer:     {req.fertilizer_name}
+Crop:           {req.crop_name}
+Contact:        {req.farmer_contact or 'Not provided'}
+Notes:          {req.notes or 'None'}
+Location:       {req.location or 'Not provided'}
+
+SUBSTANCES IN THIS PRODUCT (from compliance graph)
+---------------------------------------------------
+{substance_lines}
+
+ROUTING GUIDANCE
+----------------
+Match this request to an expert with:
+- Crop knowledge: {req.crop_name}
+- Input type knowledge: {', '.join(set(s.get('category', '') for s in substance_info)) if substance_info else 'Unknown'}
+
+This is an automated notification from SmartExports.
+The farmer will be contacted at: {req.farmer_contact or 'No contact provided'}
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = EXPERT_EMAIL
+    msg["Subject"] = f"[SmartExports] Expert Review: {req.fertilizer_name} + {req.crop_name}"
+    msg.attach(MIMEText(email_body, "plain"))
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, EXPERT_EMAIL, msg.as_string())
+        logger.info(f"Escalation email sent to {EXPERT_EMAIL}")
+    except Exception as e:
+        logger.error(f"Failed to send escalation email: {e}")
+
+
 @app.post("/escalate")
 @limiter.limit("5/minute")
 def escalate_to_expert(request: Request, req: EscalateRequest):
@@ -697,11 +787,133 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
         f"ESCALATION REQUEST | fertilizer={req.fertilizer_name} | crop={req.crop_name} "
         f"| contact={req.farmer_contact} | notes={req.notes}"
     )
+
+    # Try to get substance category from graph for smart routing context
+    substance_info = []
+    try:
+        with driver.session() as session:
+            rows = session.execute_read(
+                run_query,
+                "MATCH (f:Fertilizer {name: $name})-[:CONTAINS]->(s:Substance) "
+                "RETURN s.name AS substance, s.category AS category, s.evidenceDegree AS evidence",
+                name=req.fertilizer_name
+            )
+            substance_info = rows
+    except Exception:
+        pass
+
+    # Send email notification in background thread so endpoint never blocks
+    import threading
+    threading.Thread(
+        target=_send_escalation_email,
+        args=(req, substance_info),
+        daemon=True
+    ).start()
+
     return {
         "status": "received",
         "message": "Your request has been logged for expert review. "
-                    "Live reviewer routing is not yet active in this prototype."
+                   "An agronomist will follow up within 24 hours."
     }
+
+
+@app.get("/crops")
+def get_crops(q: Optional[str] = None):
+    """
+    Returns all crops in the compliance graph.
+    Optional ?q= parameter for fuzzy search.
+    Powers the frontend searchable crop input.
+    If a crop is not in the list, the frontend should still
+    allow free-text entry — /check handles unknown crops
+    gracefully with an Unclear verdict.
+    """
+    with driver.session() as session:
+        rows = session.execute_read(
+            run_query, "MATCH (c:Crop) RETURN c.name AS name ORDER BY c.name"
+        )
+    all_crops = [r["name"] for r in rows]
+
+    if q:
+        normalized_q = normalize_name(q)
+        # Exact prefix match first
+        prefix_matches = [c for c in all_crops if normalize_name(c).startswith(normalized_q)]
+        # Then fuzzy matches
+        fuzzy_matches = difflib.get_close_matches(normalized_q, [normalize_name(c) for c in all_crops], n=5, cutoff=0.4)
+        fuzzy_original = [c for c in all_crops if normalize_name(c) in fuzzy_matches]
+        # Combine, deduplicate, preserve order
+        combined = prefix_matches + [c for c in fuzzy_original if c not in prefix_matches]
+        return {
+            "crops": combined,
+            "total": len(combined),
+            "query": q,
+            "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
+        }
+
+    return {
+        "crops": all_crops,
+        "total": len(all_crops),
+        "query": None,
+        "note": "If your crop is not listed, enter it manually — the system will still check the fertilizer and flag Unclear if crop-specific data is unavailable."
+    }
+
+
+# ---------------------------------------------------------------------------
+# USSD Handler — Africa's Talking integration
+# Callback URL to set in AT dashboard:
+# https://smartexports-api.onrender.com/ussd
+# ---------------------------------------------------------------------------
+import sys
+import os as _os
+sys.path.insert(0, _os.path.dirname(__file__))
+from ussd_handler import handle_ussd as _handle_ussd
+
+AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
+AT_API_KEY = os.environ.get("AT_API_KEY")
+
+
+def _ussd_risk_check(fertilizer_name: str, crop_name: str):
+    """Wrapper so USSD handler can call Neo4j without knowing internals."""
+    try:
+        resolved, _ = resolve_fertilizer_name(fertilizer_name)
+        match = get_risk_match(resolved, crop_name)
+        if not match or not match.get("fertilizer"):
+            return None
+        alt = None
+        if match.get("riskLevel") == "Risky":
+            alt_result = get_alternative(resolved, crop_name)
+            if alt_result:
+                alt = alt_result.get("alternativeProduct")
+        return {
+            "fertilizer": match.get("fertilizer"),
+            "risk_level": match.get("riskLevel"),
+            "alternative_product": alt,
+        }
+    except Exception as e:
+        logger.error(f"USSD risk check error: {e}")
+        return None
+
+
+
+@app.post("/ussd")
+async def ussd_callback(request: Request):
+    """
+    Africa's Talking USSD callback endpoint.
+    AT sends form data: sessionId, phoneNumber, networkCode, text
+    We return plain text starting with CON (continue) or END (terminate).
+    """
+    form = await request.form()
+    session_id = form.get("sessionId", "")
+    phone = form.get("phoneNumber", "")
+    text = form.get("text", "")
+
+    logger.info(f"USSD session={session_id} phone={phone} text={text!r}")
+
+    response_text = _handle_ussd(session_id, phone, text, _ussd_risk_check)
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(content=response_text)
+
+
 @app.get("/")
 def root():
     return {
