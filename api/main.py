@@ -1499,3 +1499,157 @@ def masumi_agent_card():
     External platforms can use this to discover and call the agent.
     """
     return masumi_agent.get_agent_card()
+# ── Expert registration ────────────────────────────────────────────────────
+
+
+class ExpertRegisterRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    organization: str
+    county: str
+    crop_tags: list
+    substance_tags: list
+    bio: Optional[str] = None
+    password: str
+
+
+class ExpertLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/experts/register")
+def register_expert(req: ExpertRegisterRequest):
+    import hashlib
+    expert_id = f"exp-{uuid.uuid4().hex[:8]}"
+    hashed_password = hashlib.sha256(req.password.encode()).hexdigest()
+
+    query = """
+    MERGE (e:Expert {email: $email})
+    SET e.id           = $id,
+        e.name         = $name,
+        e.phone        = $phone,
+        e.organization = $organization,
+        e.crop_tags    = $crop_tags,
+        e.substance_tags = $substance_tags,
+        e.bio          = $bio,
+        e.active       = true,
+        e.password     = $password
+    WITH e
+    MERGE (co:County {name: $county})
+    MERGE (e)-[:COVERS_COUNTY]->(co)
+    RETURN e.id AS id, e.name AS name, e.email AS email
+    """
+    try:
+        with driver.session() as session:
+            rows = session.execute_write(
+                run_query,
+                query,
+                id=expert_id,
+                name=req.name,
+                email=req.email,
+                phone=req.phone,
+                organization=req.organization,
+                crop_tags=req.crop_tags,
+                substance_tags=req.substance_tags,
+                bio=req.bio or "",
+                password=hashed_password,
+                county=req.county,
+            )
+        return {
+            "status": "registered",
+            "expert_id": rows[0]["id"] if rows else expert_id,
+            "name": req.name,
+            "email": req.email,
+        }
+    except Exception as e:
+        logger.error(f"Expert registration error: {e}")
+        raise HTTPException(
+            status_code=500, detail="Registration failed. Please try again.")
+
+
+@app.post("/experts/login")
+def login_expert(req: ExpertLoginRequest):
+    import hashlib
+    hashed_password = hashlib.sha256(req.password.encode()).hexdigest()
+
+    query = """
+    MATCH (e:Expert {email: $email, password: $password, active: true})
+    RETURN e.id AS id, e.name AS name, e.email AS email,
+           e.organization AS organization, e.bio AS bio,
+           e.crop_tags AS cropTags, e.phone AS phone
+    """
+    try:
+        with driver.session() as session:
+            rows = session.execute_read(
+                run_query, query,
+                email=req.email,
+                password=hashed_password,
+            )
+        if not rows:
+            raise HTTPException(
+                status_code=401, detail="Invalid email or password.")
+        return {"status": "ok", "expert": rows[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Expert login error: {e}")
+        raise HTTPException(
+            status_code=500, detail="Login failed. Please try again.")
+
+
+@app.get("/experts/{expert_id}/escalations")
+def get_expert_escalations(expert_id: str):
+    query = """
+    MATCH (esc:Escalation)-[:MATCHED_TO]->(e:Expert {id: $expertId})
+    RETURN esc.id           AS id,
+           esc.farmer_name  AS farmerName,
+           esc.farmer_phone AS farmerPhone,
+           esc.farmer_county AS farmerCounty,
+           esc.fertilizer   AS fertilizer,
+           esc.crop         AS crop,
+           esc.risk_level   AS riskLevel,
+           esc.status       AS status,
+           esc.created_at   AS createdAt
+    ORDER BY esc.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            rows = session.execute_read(
+                run_query, query, expertId=expert_id
+            )
+        return {"escalations": rows}
+    except Exception as e:
+        logger.error(f"Get escalations error: {e}")
+        raise HTTPException(
+            status_code=500, detail="Could not fetch escalations.")
+
+
+@app.patch("/escalations/{escalation_id}/status")
+def update_escalation_status(escalation_id: str, status: str):
+    if status not in ("pending", "responded", "resolved"):
+        raise HTTPException(
+            status_code=400, detail="Invalid status. Use: pending, responded, resolved.")
+
+    query = """
+    MATCH (esc:Escalation {id: $id})
+    SET esc.status = $status
+    RETURN esc.id AS id, esc.status AS status
+    """
+    try:
+        with driver.session() as session:
+            rows = session.execute_write(
+                run_query, query,
+                id=escalation_id,
+                status=status,
+            )
+        if not rows:
+            raise HTTPException(
+                status_code=404, detail="Escalation not found.")
+        return {"id": escalation_id, "status": status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update escalation status error: {e}")
+        raise HTTPException(status_code=500, detail="Could not update status.")
