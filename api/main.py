@@ -27,7 +27,7 @@ import uuid
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import any
+from typing import Any, Optional
 from dotenv import load_dotenv
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -138,7 +138,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Email helper ───────────────────────────────────────────────────────────
+# ── Email helper ───────────────────────────────────────────────────────────[...]
 
 
 def send_expert_email(expert_email: str, expert_name: str, farmer_name: str,
@@ -194,7 +194,7 @@ SmartExports Team
         return False
 
 
-# ── SMS helper ─────────────────────────────────────────────────────────────
+# ── SMS helper ──────────────────────────────────────────────────────────�[...]
 
 def send_farmer_sms(phone: str, farmer_name: str, expert_name: str,
                     organization: str, escalation_id: str):
@@ -1106,7 +1106,7 @@ def get_crops(q: Optional[str] = None):
 # Callback URL to set in AT dashboard:
 # https://smartexports-api.onrender.com/ussd
 # ---------------------------------------------------------------------------
-sys.path.insert(0, _os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(__file__))
 
 AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
 AT_API_KEY = os.environ.get("AT_API_KEY")
