@@ -27,7 +27,7 @@ import uuid
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional
+from typing import any
 from dotenv import load_dotenv
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
