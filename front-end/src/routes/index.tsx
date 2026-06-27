@@ -48,6 +48,10 @@ const DEMO_SAMPLES: DemoSample[] = [
   { product: "Unknown product", crop: "French Beans", risk: "Unclear" },
 ];
 
+// Type-safe wrappers for hooks
+const useTypedState = useState;
+const useTypedRef = useRef;
+
 function SmartExportsApp() {
   const { t } = useI18n();
   const [step, setStep] = useState<Step>("intro");
@@ -261,10 +265,10 @@ function SmartExportsApp() {
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-background text-foreground">
+    <div className="relative min-h-dvh overflow-hidden bg-background text-foreground">
       <div className="paper-grain pointer-events-none absolute inset-0 opacity-60" />
       <AmbientPanel />
-      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[440px] flex-col px-6 pb-10 pt-6 lg:mx-0 lg:ml-[max(3rem,calc(50vw-30rem))]">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-110 flex-col px-6 pb-10 pt-6 lg:mx-0 lg:ml-[max(3rem,calc(50vw-30rem))]">
         <TopBar onReset={step !== "intro" ? reset : undefined} />
 
         <main className="flex-1">
@@ -469,6 +473,11 @@ function Intro({
         <p className="mt-3 text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
           {t.intro.note}
         </p>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/70">
+          No smartphone? Dial{" "}
+          <span className="font-mono font-medium text-foreground">*384*58768#</span>
+          {" "}on any phone
+        </p>
       </div>
 
       <div className="mt-8 rounded-md border border-border bg-card/70 p-4">
@@ -554,17 +563,15 @@ function RiskDot({ risk }: { risk: RiskLevel }) {
   );
 }
 
-function Bullet({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <li className="flex gap-4">
-      <span className="font-display text-xl leading-none text-primary">{n}</span>
-      <div>
-        <p className="font-medium">{title}</p>
-        <p className="text-muted-foreground">{body}</p>
-      </div>
-    </li>
-  );
-}
+const Bullet = ({ n, title, body }: { n: string; title: string; body: string }) => (
+  <li className="flex gap-4">
+    <span className="font-display text-xl leading-none text-primary">{n}</span>
+    <div>
+      <p className="font-medium">{title}</p>
+      <p className="text-muted-foreground">{body}</p>
+    </div>
+  </li>
+);
 
 /* ---------- 02 · Capture ---------- */
 
@@ -639,10 +646,10 @@ function Capture({ onPhoto, onBack }: { onPhoto: (f: File) => void; onBack: () =
   return (
     <section className="animate-fade-up pt-10">
       <StepLabel index="02" label={t.capture.kicker} />
-      <h2 className="mt-6 font-display text-[34px] leading-[1] tracking-tight">{t.capture.h2}</h2>
+      <h2 className="mt-6 font-display text-[34px] leading-none tracking-tight">{t.capture.h2}</h2>
       <p className="mt-4 max-w-[34ch] text-[14px] text-muted-foreground">{t.capture.lede}</p>
 
-      <div className="relative mt-8 aspect-[4/5] w-full overflow-hidden rounded-md border border-dashed border-border bg-card/40 p-3">
+      <div className="relative mt-8 aspect-4/5 w-full overflow-hidden rounded-md border border-dashed border-border bg-card/40 p-3">
         <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-sm border border-border/60 bg-paper">
           {session ? (
             <>
@@ -805,7 +812,7 @@ function Confirm({
   return (
     <section className="animate-fade-up pt-8">
       <StepLabel index="03" label={t.confirm.kicker} />
-      <h2 className="mt-5 font-display text-[30px] leading-[1] tracking-tight">{t.confirm.h2}</h2>
+      <h2 className="mt-5 font-display text-[30px] leading-none tracking-tight">{t.confirm.h2}</h2>
 
       <div className="mt-6 flex gap-4">
         <div className="h-24 w-24 shrink-0 overflow-hidden rounded-sm border border-border bg-muted">
@@ -1276,7 +1283,7 @@ function Escalate({
   if (done) {
     return (
       <section className="animate-fade-up pt-16 text-center">
-        <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[color:var(--safe-soft)] text-[color:var(--safe)]">
+        <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-safe-soft text-safe">
           ✓
         </span>
         <h2 className="mt-6 font-display text-[30px] leading-tight tracking-tight">
@@ -1314,7 +1321,7 @@ function Escalate({
   return (
     <section className="animate-fade-up pt-8">
       <StepLabel index="!" label={t.escalate.kicker} />
-      <h2 className="mt-5 font-display text-[30px] leading-[1] tracking-tight">{t.escalate.h2}</h2>
+      <h2 className="mt-5 font-display text-[30px] leading-none tracking-tight">{t.escalate.h2}</h2>
       <p className="mt-3 max-w-[34ch] text-[14px] text-muted-foreground">
         {t.escalate.lede(product)}
       </p>
