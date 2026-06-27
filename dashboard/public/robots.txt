@@ -1,0 +1,3 @@
+# Internal expert-only tool — keep it out of search results.
+User-agent: *
+Disallow: /

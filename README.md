@@ -30,12 +30,13 @@ Safe / Risky / Unclear verdict with a grounded explanation.
 
 ## Frontend folders
 
-There are two frontend folders in this checkout:
+There are three frontend-related folders in this checkout:
 
-- `front-end/` is the production-ready SmartExports app. It includes the camera flow, OCR confirmation, crop selection, retries, recent checks, Swahili toggle, result sharing, and escalation receipts.
+- `front-end/` is the production-ready SmartExports app. It includes the camera flow, OCR confirmation, crop selection, retries, recent checks, Swahili toggle, result sharing, and escalation receipts. Live at https://front-end-nu-rosy-90.vercel.app/.
+- `dashboard/` is the Expert Portal — an internal TanStack Start app where agronomy experts sign up, log in, and triage/respond to farmer escalations created via `front-end/`'s escalation flow. Deployed as its own Vercel project (root directory `dashboard/`); see `dashboard/INTEGRATION.md` and `dashboard/AGENTS.md` before editing.
 - `frontend/` is a smaller Next.js prototype kept for reference.
 
-Use `front-end/` for development and Vercel deployment.
+Use `front-end/` for the farmer-facing app and `dashboard/` for the expert portal; both deploy to Vercel independently and talk to the same backend above.
 
 ## Local full-stack run
 

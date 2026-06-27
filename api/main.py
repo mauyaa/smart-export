@@ -105,6 +105,9 @@ DEFAULT_CORS_ORIGINS_LIST = [
     "https://smart-export-mauyaas-projects.vercel.app",
     "https://smartexports.vercel.app",
     "https://front-end-nu-rosy-90.vercel.app",
+    # Expert dashboard (dashboard/ in this repo), deployed as its own Vercel
+    # project. Update this if Vercel assigns a different production domain.
+    "https://smart-export-dashboard.vercel.app",
 ]
 
 env_origins = os.environ.get("CORS_ORIGINS", "")
