@@ -73,6 +73,9 @@ NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
 FEATHERLESS_MODEL = os.getenv("FEATHERLESS_MODEL", "").strip() or "Qwen/Qwen2.5-7B-Instruct"
 FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EXPERT_EMAIL = os.environ.get("EXPERT_EMAIL", "")
 EXPLANATION_PROVIDER = os.environ.get("EXPLANATION_PROVIDER", "featherless").lower()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 DEFAULT_CORS_ORIGINS_LIST = [
@@ -144,6 +147,7 @@ class EscalateRequest(BaseModel):
     crop_name: str
     farmer_contact: Optional[str] = None
     notes: Optional[str] = None
+    location: Optional[str] = None
 
 
 _CACHE: dict = {}
@@ -709,6 +713,71 @@ def check_fertilizer(request: Request, req: CheckRequest):
     return ResultCard(**result)
 
 
+def _send_escalation_email(req: EscalateRequest, substance_info: list):
+    """
+    Sends escalation notification to expert pool inbox.
+    Includes all farmer context so coordinator can route to right expert.
+    """
+    if not SMTP_EMAIL or not SMTP_PASSWORD or not EXPERT_EMAIL:
+        logger.warning("Email not configured — escalation logged but not emailed.")
+        return
+
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    substance_lines = ""
+    if substance_info:
+        for s in substance_info:
+            substance_lines += (
+                f"\n  - {s.get('substance', 'Unknown')} "
+                f"(category: {s.get('category', 'unknown')}, "
+                f"evidence degree: {s.get('evidence', 0)})"
+            )
+    else:
+        substance_lines = "\n  - Not found in database (reason for escalation)"
+
+    email_body = f"""
+SmartExports — Expert Review Request
+=====================================
+
+FARMER REQUEST DETAILS
+----------------------
+Fertilizer:     {req.fertilizer_name}
+Crop:           {req.crop_name}
+Contact:        {req.farmer_contact or 'Not provided'}
+Notes:          {req.notes or 'None'}
+Location:       {req.location or 'Not provided'}
+
+SUBSTANCES IN THIS PRODUCT (from compliance graph)
+---------------------------------------------------
+{substance_lines}
+
+ROUTING GUIDANCE
+----------------
+Match this request to an expert with:
+- Crop knowledge: {req.crop_name}
+- Input type knowledge: {', '.join(set(s.get('category', '') for s in substance_info)) if substance_info else 'Unknown'}
+
+This is an automated notification from SmartExports.
+The farmer will be contacted at: {req.farmer_contact or 'No contact provided'}
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = EXPERT_EMAIL
+    msg["Subject"] = f"[SmartExports] Expert Review: {req.fertilizer_name} + {req.crop_name}"
+    msg.attach(MIMEText(email_body, "plain"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, EXPERT_EMAIL, msg.as_string())
+        logger.info(f"Escalation email sent to {EXPERT_EMAIL}")
+    except Exception as e:
+        logger.error(f"Failed to send escalation email: {e}")
+
+
 @app.post("/escalate")
 @limiter.limit("5/minute")
 def escalate_to_expert(request: Request, req: EscalateRequest):
@@ -716,10 +785,28 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
         f"ESCALATION REQUEST | fertilizer={req.fertilizer_name} | crop={req.crop_name} "
         f"| contact={req.farmer_contact} | notes={req.notes}"
     )
+
+    # Try to get substance category from graph for smart routing context
+    substance_info = []
+    try:
+        with driver.session() as session:
+            rows = session.execute_read(
+                run_query,
+                "MATCH (f:Fertilizer {name: $name})-[:CONTAINS]->(s:Substance) "
+                "RETURN s.name AS substance, s.category AS category, s.evidenceDegree AS evidence",
+                name=req.fertilizer_name
+            )
+            substance_info = rows
+    except Exception:
+        pass
+
+    # Send email notification
+    _send_escalation_email(req, substance_info)
+
     return {
         "status": "received",
         "message": "Your request has been logged for expert review. "
-                    "Live reviewer routing is not yet active in this prototype."
+                   "An agronomist will follow up within 24 hours."
     }
 
 
