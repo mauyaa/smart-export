@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   COMMON_CROPS,
+  KENYA_COUNTIES,
   NetworkError,
   checkFertilizer,
   escalate,
@@ -246,15 +247,27 @@ function SmartExportsApp() {
     }
   };
 
-  const submitEscalate = async (contact: string, notes: string) => {
+  const submitEscalate = async (
+    farmerName: string,
+    farmerCounty: string,
+    contact: string,
+    notes: string,
+  ) => {
     const { signal, done } = newSignal();
-    trackEvent("escalate_submit", { crop });
+    trackEvent("escalate_submit", { crop, county: farmerCounty });
     try {
       const r = await escalate(
         {
           fertilizer_name: product.trim(),
           crop_name: crop,
+          farmer_name: farmerName.trim() || undefined,
           farmer_contact: contact || undefined,
+          farmer_county: farmerCounty || undefined,
+          // Passed through automatically from the check result — the farmer
+          // doesn't re-enter these, and they're what the backend uses to
+          // route the escalation to the right local expert.
+          risk_level: result?.risk_level,
+          substances: result ? extractSubstances(result.evidence) : undefined,
           notes: notes || undefined,
         },
         { signal },
@@ -336,6 +349,7 @@ function SmartExportsApp() {
             <Escalate
               product={product}
               crop={crop}
+              result={result}
               done={escalated}
               onSubmit={submitEscalate}
               onDone={reset}
@@ -1087,6 +1101,20 @@ function evidenceHits(evidence: Record<string, unknown>, key: string): EvidenceH
     : [];
 }
 
+// All distinct substances flagged across the evidence — sent to the backend
+// on escalation so the expert review queue shows what triggered the verdict.
+function extractSubstances(evidence: Record<string, unknown>): string[] {
+  const hits = [
+    ...evidenceHits(evidence, "regulatoryHits"),
+    ...evidenceHits(evidence, "rejectionHits"),
+    ...evidenceHits(evidence, "organicHits"),
+  ];
+  const names = hits
+    .map((hit) => textValue(hit.substance))
+    .filter((s): s is string => Boolean(s));
+  return Array.from(new Set(names));
+}
+
 function summarizeEvidence(result: ResultCard) {
   const regulatoryHits = evidenceHits(result.evidence, "regulatoryHits");
   const rejectionHits = evidenceHits(result.evidence, "rejectionHits");
@@ -1309,28 +1337,44 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
 function Escalate({
   product,
   crop,
+  result,
   done,
   onSubmit,
   onDone,
 }: {
   product: string;
   crop: string;
+  result: ResultCard | null;
   done: { ticket: string } | null;
-  onSubmit: (contact: string, notes: string) => Promise<void>;
+  onSubmit: (
+    farmerName: string,
+    farmerCounty: string,
+    contact: string,
+    notes: string,
+  ) => Promise<void>;
   onDone: () => void;
 }) {
   const { t } = useI18n();
+  const [farmerName, setFarmerName] = useState("");
+  const [farmerCounty, setFarmerCounty] = useState("");
   const [contact, setContact] = useState("");
   const [notes, setNotes] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const substances = useMemo(
+    () => (result ? extractSubstances(result.evidence) : []),
+    [result],
+  );
+  const canSubmit = farmerName.trim().length > 0 && farmerCounty.length > 0;
+
   const submit = useCallback(async () => {
+    if (!canSubmit) return;
     setSending(true);
     setErr(null);
     try {
-      await onSubmit(contact, notes);
+      await onSubmit(farmerName.trim(), farmerCounty, contact, notes);
     } catch (e) {
       if (e instanceof ApiError) setErr(e.detail);
       else if (e instanceof NetworkError) setErr(t.errors.network);
@@ -1338,7 +1382,7 @@ function Escalate({
     } finally {
       setSending(false);
     }
-  }, [contact, notes, onSubmit, t]);
+  }, [canSubmit, farmerName, farmerCounty, contact, notes, onSubmit, t]);
 
   const copyTicket = async () => {
     if (!done) return;
@@ -1398,6 +1442,33 @@ function Escalate({
       </p>
 
       <div className="mt-8 space-y-6">
+        <Field label={t.escalate.farmerNameLabel}>
+          <input
+            value={farmerName}
+            onChange={(e) => setFarmerName(e.target.value)}
+            placeholder={t.escalate.farmerNamePh}
+            className="w-full border-0 border-b border-border bg-transparent pb-2 text-[16px] outline-none focus:border-foreground"
+          />
+        </Field>
+        <Field label={t.escalate.countyLabel}>
+          <select
+            value={farmerCounty}
+            onChange={(e) => setFarmerCounty(e.target.value)}
+            className="w-full border-0 border-b border-border bg-transparent pb-2 text-[16px] outline-none focus:border-foreground"
+          >
+            <option value="" disabled>
+              {t.escalate.countyPh}
+            </option>
+            {KENYA_COUNTIES.map((county) => (
+              <option key={county} value={county}>
+                {county}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            {t.escalate.countyRequired}
+          </p>
+        </Field>
         <Field label={t.escalate.contactLabel}>
           <input
             value={contact}
@@ -1417,6 +1488,22 @@ function Escalate({
         </Field>
       </div>
 
+      {result && (
+        <div className="mt-6 rounded-sm border border-border bg-card/70 px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            {t.escalate.autoLabel}
+          </p>
+          <p className="mt-2 text-[12px] leading-relaxed">
+            <span className="font-medium">{t.escalate.riskLevelLabel}:</span>{" "}
+            {result.risk_level}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed">
+            <span className="font-medium">{t.escalate.substancesLabel}:</span>{" "}
+            {substances.length > 0 ? substances.join(", ") : t.escalate.noSubstances}
+          </p>
+        </div>
+      )}
+
       {err && (
         <p className="mt-6 rounded-sm border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
           {err}
@@ -1424,7 +1511,7 @@ function Escalate({
       )}
 
       <div className="mt-10 space-y-3">
-        <PrimaryButton onClick={submit} disabled={sending}>
+        <PrimaryButton onClick={submit} disabled={sending || !canSubmit}>
           {sending ? t.escalate.sending : t.escalate.cta}
         </PrimaryButton>
         <button

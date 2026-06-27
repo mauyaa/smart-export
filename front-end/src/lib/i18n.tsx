@@ -93,10 +93,19 @@ type Dict = {
     kicker: string;
     h2: string;
     lede: (p: string) => string;
+    farmerNameLabel: string;
+    farmerNamePh: string;
+    countyLabel: string;
+    countyPh: string;
     contactLabel: string;
     contactPh: string;
     notesLabel: string;
     notesPh: string;
+    autoLabel: string;
+    riskLevelLabel: string;
+    substancesLabel: string;
+    noSubstances: string;
+    countyRequired: string;
     cta: string;
     sending: string;
     cancel: string;
@@ -254,10 +263,19 @@ const en: Dict = {
     h2: "We don't know this one yet.",
     lede: (p) =>
       `${p || "This product"} isn't in our compliance graph. Send it to an agronomist for expert review — we'll add it for future farmers.`,
+    farmerNameLabel: "Your name",
+    farmerNamePh: "e.g. Jane Wanjiru",
+    countyLabel: "County",
+    countyPh: "Select your county",
     contactLabel: "Your phone or email (optional)",
     contactPh: "+254… or you@example.com",
     notesLabel: "Anything we should know? (optional)",
     notesPh: "Where you bought it, batch numbers, what's on the back of the label…",
+    autoLabel: "Included automatically",
+    riskLevelLabel: "Risk level",
+    substancesLabel: "Flagged substances",
+    noSubstances: "None flagged",
+    countyRequired: "Your county helps us route this to the right local expert.",
     cta: "Send for review",
     sending: "Sending…",
     cancel: "Cancel",
@@ -428,10 +446,19 @@ const sw: Dict = {
     h2: "Hatuijui hii bado.",
     lede: (p) =>
       `${p || "Bidhaa hii"} haipo kwenye grafu yetu. Ituma kwa mtaalamu wa kilimo — tutaiongeza kwa wakulima wajao.`,
+    farmerNameLabel: "Jina lako",
+    farmerNamePh: "k.m. Jane Wanjiru",
+    countyLabel: "Wilaya (County)",
+    countyPh: "Chagua wilaya yako",
     contactLabel: "Simu au barua pepe yako (hiari)",
     contactPh: "+254… au wewe@mfano.com",
     notesLabel: "Kitu chochote tujue? (hiari)",
     notesPh: "Ulinunua wapi, nambari za kundi, kilicho nyuma ya lebo…",
+    autoLabel: "Imejumuishwa kiotomatiki",
+    riskLevelLabel: "Kiwango cha hatari",
+    substancesLabel: "Vitu vilivyobainika",
+    noSubstances: "Hakuna kilichobainika",
+    countyRequired: "Wilaya yako inatusaidia kuelekeza ombi lako kwa mtaalamu sahihi wa eneo lako.",
     cta: "Tuma kwa ukaguzi",
     sending: "Inatuma…",
     cancel: "Ghairi",

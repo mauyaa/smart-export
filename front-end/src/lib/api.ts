@@ -162,7 +162,11 @@ export async function escalate(
   input: {
     fertilizer_name: string;
     crop_name: string;
+    farmer_name?: string;
     farmer_contact?: string;
+    farmer_county?: string;
+    risk_level?: RiskLevel;
+    substances?: string[];
     notes?: string;
   },
   opts: RequestOptions = {},
@@ -215,6 +219,17 @@ export const COMMON_CROPS = [
   "Cut Flowers",
   "Passion Fruit",
   "Pineapple",
+] as const;
+
+// Kenyan counties — used to match an escalation to the right local expert.
+// Kept in sync with dashboard/src/lib/experts.ts (KENYA_COUNTIES).
+export const KENYA_COUNTIES = [
+  "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa", "Homa Bay",
+  "Isiolo", "Kajiado", "Kakamega", "Kericho", "Kiambu", "Kilifi", "Kirinyaga", "Kisii",
+  "Kisumu", "Kitui", "Kwale", "Laikipia", "Lamu", "Machakos", "Makueni", "Mandera",
+  "Marsabit", "Meru", "Migori", "Mombasa", "Murang'a", "Nairobi", "Nakuru", "Nandi",
+  "Narok", "Nyamira", "Nyandarua", "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River",
+  "Tharaka-Nithi", "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", "Wajir", "West Pokot",
 ] as const;
 
 // ── Masumi agent protocol ─────────────────────────────────────────────────────
