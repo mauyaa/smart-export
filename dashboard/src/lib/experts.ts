@@ -41,6 +41,7 @@ export interface Escalation {
   fertilizer: string;
   crop: string;
   riskLevel: "Safe" | "Risky" | "Unclear" | string;
+  substances?: string[] | null;
   status: "pending" | "responded" | "resolved" | string;
   createdAt: string | null;
   explanation?: string | null;

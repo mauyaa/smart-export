@@ -1,14 +1,4 @@
-// ── (Misfiled) ────────────────────────────────────────────────────────────
-// This file is named "08_seed_experts" but its content is actually the
-// expert-matching query, not seed data. api/main.py only ever loads
-// "09_expert_match.cypher" (see load_expert_match_query()), so this copy
-// was dead code — the real backend never read this file.
-//
-// The matching query now lives at cypher/09_expert_match.cypher, which is
-// the file api/main.py actually loads. This file is kept only so no old
-// references break; do not edit the query here, edit 09_expert_match.cypher.
-//
-// Original (now-fixed) query content below, retained for history:
+// ── Expert matching query ──────────────────────────────────────────────────
 // Given a crop, county, and list of flagged substances,
 // find the best matching active expert.
 //
@@ -18,6 +8,9 @@
 //   +1 per matching substance tag
 //
 // Returns the top 1 expert by score.
+//
+// NOTE: this file must be named exactly "09_expert_match.cypher" —
+// api/main.py's load_expert_match_query() loads it by that filename.
 
 MATCH (e:Expert {active: true})
 

@@ -145,7 +145,8 @@ app.add_middleware(
 
 def send_expert_email(expert_email: str, expert_name: str, farmer_name: str,
                       farmer_phone: str, farmer_county: str, fertilizer: str,
-                      crop: str, risk_level: str, explanation: str, escalation_id: str):
+                      crop: str, risk_level: str, explanation: str, escalation_id: str,
+                      substances: Optional[list] = None):
     if not SMTP_EMAIL or not SMTP_PASSWORD:
         logger.warning("SMTP credentials not set — skipping email.")
         return False
@@ -154,6 +155,8 @@ def send_expert_email(expert_email: str, expert_name: str, farmer_name: str,
         msg["Subject"] = f"[SmartExports] Expert Review Request — {fertilizer} / {crop}"
         msg["From"] = SMTP_EMAIL
         msg["To"] = expert_email
+
+        substances_line = ", ".join(substances) if substances else "None flagged"
 
         body = f"""
 Dear {expert_name},
@@ -171,6 +174,7 @@ PRODUCT DETAILS:
   Fertilizer: {fertilizer}
   Crop:       {crop}
   Risk Level: {risk_level}
+  Flagged Substances: {substances_line}
 
 SYSTEM EXPLANATION:
 {explanation}
@@ -254,7 +258,8 @@ def match_expert(county: str, crop: str, substances: list):
 
 def store_escalation(escalation_id: str, farmer_name: str, farmer_phone: str,
                      farmer_county: str, fertilizer: str, crop: str,
-                     risk_level: str, expert_id: Optional[str]):
+                     risk_level: str, expert_id: Optional[str],
+                     substances: Optional[list] = None):
     query = """
     MERGE (esc:Escalation {id: $id})
     SET esc.farmer_name    = $farmer_name,
@@ -263,6 +268,7 @@ def store_escalation(escalation_id: str, farmer_name: str, farmer_phone: str,
         esc.fertilizer     = $fertilizer,
         esc.crop           = $crop,
         esc.risk_level     = $risk_level,
+        esc.substances     = $substances,
         esc.status         = $status,
         esc.created_at     = $created_at
     WITH esc
@@ -292,6 +298,7 @@ def store_escalation(escalation_id: str, farmer_name: str, farmer_phone: str,
                 fertilizer=fertilizer,
                 crop=crop,
                 risk_level=risk_level or "Unclear",
+                substances=substances or [],
                 status="pending",
                 created_at=int(time.time()),
                 expert_id=expert_id or "",
@@ -1019,6 +1026,7 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
         crop=req.crop_name,
         risk_level=req.risk_level or "Unclear",
         expert_id=expert_id,
+        substances=req.substances or [],
     )
 
     # 3. Email the expert (in background thread so endpoint never blocks)
@@ -1031,7 +1039,7 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
                   req.fertilizer_name, req.crop_name,
                   req.risk_level or "Unclear",
                   req.explanation or "No explanation available.",
-                  escalation_id),
+                  escalation_id, req.substances or []),
             daemon=True,
         ).start()
 
@@ -1541,6 +1549,19 @@ def register_expert(req: ExpertRegisterRequest):
     WITH e
     MERGE (co:County {name: $county})
     MERGE (e)-[:COVERS_COUNTY]->(co)
+    WITH DISTINCT e
+    UNWIND (CASE WHEN size($crop_tags) = 0 THEN [null] ELSE $crop_tags END) AS cropName
+    FOREACH (_ IN CASE WHEN cropName IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (cr:Crop {name: cropName})
+        MERGE (e)-[:SPECIALIZES_IN]->(cr)
+    )
+    WITH DISTINCT e
+    UNWIND (CASE WHEN size($substance_tags) = 0 THEN [null] ELSE $substance_tags END) AS subName
+    FOREACH (_ IN CASE WHEN subName IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (s:Substance {name: subName})
+        MERGE (e)-[:KNOWS_SUBSTANCE]->(s)
+    )
+    WITH DISTINCT e
     RETURN e.id AS id, e.name AS name, e.email AS email
     """
     try:
@@ -1612,6 +1633,7 @@ def get_expert_escalations(expert_id: str):
            esc.fertilizer   AS fertilizer,
            esc.crop         AS crop,
            esc.risk_level   AS riskLevel,
+           esc.substances   AS substances,
            esc.status       AS status,
            esc.created_at   AS createdAt
     ORDER BY esc.created_at DESC

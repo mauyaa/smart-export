@@ -89,6 +89,10 @@ function EscalationDetail() {
           <Row label="Fertilizer" value={esc.fertilizer} />
           <Row label="Crop" value={esc.crop} />
           <Row label="Risk level" value={esc.riskLevel} />
+          <Row
+            label="Substances"
+            value={esc.substances && esc.substances.length > 0 ? esc.substances.join(", ") : "None flagged"}
+          />
           <Row label="Date submitted" value={formatDate(esc.createdAt)} />
         </Panel>
       </div>
