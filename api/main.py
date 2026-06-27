@@ -1106,7 +1106,6 @@ def get_crops(q: Optional[str] = None):
 # Callback URL to set in AT dashboard:
 # https://smartexports-api.onrender.com/ussd
 # ---------------------------------------------------------------------------
-sys.path.insert(0, os.path.dirname(__file__))
 
 AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
 AT_API_KEY = os.environ.get("AT_API_KEY")
