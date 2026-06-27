@@ -20,6 +20,7 @@ ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
 Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
+from masumi import masumi_agent, validate_masumi_payment, make_receipt
 from ussd_handler import handle_ussd as _handle_ussd
 import os as _os
 import sys
@@ -48,8 +49,6 @@ from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-
-from masumi import masumi_agent, validate_masumi_payment, make_receipt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartexports")
@@ -1080,7 +1079,7 @@ def get_crops(q: Optional[str] = None):
         normalized_q = normalize_name(q)
         # Exact prefix match first
         prefix_matches = [c for c in all_crops if normalize_name(
-            c).startswith(normalized_q)]4
+            c).startswith(normalized_q)]
         # Then fuzzy matches
         fuzzy_matches = difflib.get_close_matches(
             normalized_q, [normalize_name(c) for c in all_crops], n=5, cutoff=0.4)
@@ -1395,16 +1394,18 @@ def masumi_check(request: Request, req: MasumiCheckRequest):
         raise HTTPException(
             status_code=402,
             detail=f"Payment required. {validation.get('reason', 'invalid_token')}. "
-                   f"See /masumi/agent-card for pricing and wallet address."
+            f"See /masumi/agent-card for pricing and wallet address."
         )
 
     # 2. Run the same compliance check logic as /check
     try:
-        resolved_name, matched_via = resolve_fertilizer_name(req.fertilizer_name)
+        resolved_name, matched_via = resolve_fertilizer_name(
+            req.fertilizer_name)
         resolved_crop = resolve_crop_name(req.crop_name)
     except (ServiceUnavailable, Neo4jError) as e:
         logger.error(f"Masumi check — Neo4j error during name resolution: {e}")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+        raise HTTPException(
+            status_code=503, detail="Database temporarily unavailable. Please retry.")
 
     cache_key = f"{resolved_name}::{resolved_crop}"
     cached = cache_get(cache_key)
@@ -1412,14 +1413,16 @@ def masumi_check(request: Request, req: MasumiCheckRequest):
     if cached:
         cached["matched_via"] = matched_via
         if cached.get("risk_level") == "Risky" and not cached.get("alternative_product"):
-            cached["alternative_product"] = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
+            cached["alternative_product"] = DEMO_PRODUCTS.get(
+                resolved_name, {}).get("alternative")
         result_data = dict(cached)
     else:
         try:
             match = get_risk_match(resolved_name, resolved_crop)
         except (ServiceUnavailable, Neo4jError) as e:
             logger.error(f"Masumi check — Neo4j error during risk match: {e}")
-            raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+            raise HTTPException(
+                status_code=503, detail="Database temporarily unavailable. Please retry.")
 
         if not match or not match.get("fertilizer"):
             raise HTTPException(
@@ -1434,7 +1437,8 @@ def masumi_check(request: Request, req: MasumiCheckRequest):
         except (ServiceUnavailable, Neo4jError):
             evidence_path = []
 
-        explanation = generate_grounded_explanation(resolved_name, resolved_crop, risk_level, evidence_path)
+        explanation = generate_grounded_explanation(
+            resolved_name, resolved_crop, risk_level, evidence_path)
 
         next_step_map = {
             "Safe": "Proceed with application as planned.",
