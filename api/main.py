@@ -20,28 +20,34 @@ ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
 Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
+from ussd_handler import handle_ussd as _handle_ussd
+import os as _os
+import sys
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from fastapi import UploadFile, File
+from openai import OpenAI, APIError, APIConnectionError
+from neo4j.exceptions import Neo4jError, ServiceUnavailable
+from neo4j import GraphDatabase
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request
 import os
 import json
 import time
 import logging
 import difflib
 import base64
-from typing import Any, Optional
+import uuid
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from typing import Optional
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError, ServiceUnavailable
-from openai import OpenAI, APIError, APIConnectionError
-from fastapi import UploadFile, File
-
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 from masumi import masumi_agent, validate_masumi_payment, make_receipt
 
@@ -49,6 +55,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartexports")
 
 REQUIRED_ENV_VARS = ["NEO4J_PASSWORD", "FEATHERLESS_API_KEY"]
+
+# Email config
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+
+# Africa's Talking config
+AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
+AT_API_KEY = os.environ.get("AT_API_KEY", "")
 missing = [v for v in REQUIRED_ENV_VARS if not os.environ.get(v)]
 SMARTEXPORTS_DEMO_MODE = os.environ.get("SMARTEXPORTS_DEMO_MODE", "").strip().lower() in {
     "1",
@@ -73,12 +87,15 @@ if DEMO_MODE:
 NEO4J_URI = os.environ.get("NEO4J_URI", "neo4j://127.0.0.1:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD")
-FEATHERLESS_MODEL = os.getenv("FEATHERLESS_MODEL", "").strip() or "Qwen/Qwen2.5-7B-Instruct"
-FEATHERLESS_VISION_MODEL = os.environ.get("FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
+FEATHERLESS_MODEL = os.getenv(
+    "FEATHERLESS_MODEL", "").strip() or "Qwen/Qwen2.5-7B-Instruct"
+FEATHERLESS_VISION_MODEL = os.environ.get(
+    "FEATHERLESS_VISION_MODEL", "google/gemma-3-27b-it")
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 EXPERT_EMAIL = os.environ.get("EXPERT_EMAIL", "")
-EXPLANATION_PROVIDER = os.environ.get("EXPLANATION_PROVIDER", "featherless").lower()
+EXPLANATION_PROVIDER = os.environ.get(
+    "EXPLANATION_PROVIDER", "featherless").lower()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 DEFAULT_CORS_ORIGINS_LIST = [
     "http://localhost:3000",
@@ -96,12 +113,14 @@ DEFAULT_CORS_ORIGINS_LIST = [
 env_origins = os.environ.get("CORS_ORIGINS", "")
 CORS_ORIGINS = DEFAULT_CORS_ORIGINS_LIST.copy()
 if env_origins:
-    CORS_ORIGINS.extend([o.strip() for o in env_origins.split(",") if o.strip()])
+    CORS_ORIGINS.extend([o.strip()
+                        for o in env_origins.split(",") if o.strip()])
 
 # Remove duplicates
 CORS_ORIGINS = list(set(CORS_ORIGINS))
 
-driver = None if DEMO_MODE else GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+driver = None if DEMO_MODE else GraphDatabase.driver(
+    NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 llm_client = None if DEMO_MODE else OpenAI(
     api_key=os.environ.get("FEATHERLESS_API_KEY"),
@@ -122,10 +141,177 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Email helper ───────────────────────────────────────────────────────────
+
+
+def send_expert_email(expert_email: str, expert_name: str, farmer_name: str,
+                      farmer_phone: str, farmer_county: str, fertilizer: str,
+                      crop: str, risk_level: str, explanation: str, escalation_id: str):
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        logger.warning("SMTP credentials not set — skipping email.")
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[SmartExports] Expert Review Request — {fertilizer} / {crop}"
+        msg["From"] = SMTP_EMAIL
+        msg["To"] = expert_email
+
+        body = f"""
+Dear {expert_name},
+
+A farmer needs your expert advice on an EU compliance issue.
+
+ESCALATION ID: {escalation_id}
+
+FARMER DETAILS:
+  Name:    {farmer_name or "Not provided"}
+  Phone:   {farmer_phone or "Not provided"}
+  County:  {farmer_county or "Not provided"}
+
+PRODUCT DETAILS:
+  Fertilizer: {fertilizer}
+  Crop:       {crop}
+  Risk Level: {risk_level}
+
+SYSTEM EXPLANATION:
+{explanation}
+
+Please contact the farmer directly via phone or reply to this email with your advice.
+Your response will be logged in the SmartExports system.
+
+Thank you,
+SmartExports Team
+        """.strip()
+
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.sendmail(SMTP_EMAIL, expert_email, msg.as_string())
+
+        logger.info(
+            f"Expert email sent to {expert_email} for escalation {escalation_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send expert email: {e}")
+        return False
+
+
+# ── SMS helper ─────────────────────────────────────────────────────────────
+
+def send_farmer_sms(phone: str, farmer_name: str, expert_name: str,
+                    organization: str, escalation_id: str):
+    if not AT_API_KEY:
+        logger.warning("Africa's Talking API key not set — skipping SMS.")
+        return False
+    try:
+        import africastalking
+        africastalking.initialize(AT_USERNAME, AT_API_KEY)
+        sms = africastalking.SMS
+        message = (
+            f"SmartExports: Hi {farmer_name or 'Farmer'}, your request ({escalation_id[:8]}) "
+            f"has been matched to {expert_name} from {organization}. "
+            f"They will contact you within 24hrs."
+        )
+        response = sms.send(message, [phone])
+        logger.info(f"SMS sent to {phone}: {response}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send SMS: {e}")
+        return False
+
+
+# ── Expert matching ────────────────────────────────────────────────────────
+
+EXPERT_MATCH_QUERY = ""
+
+
+def load_expert_match_query():
+    global EXPERT_MATCH_QUERY
+    path = os.path.join(CYPHER_DIR, "09_expert_match.cypher")
+    if os.path.exists(path):
+        EXPERT_MATCH_QUERY = open(path).read()
+
+
+def match_expert(county: str, crop: str, substances: list):
+    if not EXPERT_MATCH_QUERY:
+        return None
+    try:
+        with driver.session() as session:
+            rows = session.execute_read(
+                run_query,
+                EXPERT_MATCH_QUERY,
+                county=county,
+                crop=crop,
+                substances=substances,
+            )
+            return rows[0] if rows else None
+    except Exception as e:
+        logger.error(f"Expert matching error: {e}")
+        return None
+
+
+# ── Store escalation in Neo4j ──────────────────────────────────────────────
+
+def store_escalation(escalation_id: str, farmer_name: str, farmer_phone: str,
+                     farmer_county: str, fertilizer: str, crop: str,
+                     risk_level: str, expert_id: Optional[str]):
+    query = """
+    MERGE (esc:Escalation {id: $id})
+    SET esc.farmer_name    = $farmer_name,
+        esc.farmer_phone   = $farmer_phone,
+        esc.farmer_county  = $farmer_county,
+        esc.fertilizer     = $fertilizer,
+        esc.crop           = $crop,
+        esc.risk_level     = $risk_level,
+        esc.status         = $status,
+        esc.created_at     = $created_at
+    WITH esc
+    MATCH (f:Fertilizer {name: $fertilizer})
+    MERGE (esc)-[:ABOUT_FERTILIZER]->(f)
+    WITH esc
+    OPTIONAL MATCH (co:County {name: $farmer_county})
+    FOREACH (_ IN CASE WHEN co IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (esc)-[:IN_COUNTY]->(co)
+    )
+    WITH esc
+    OPTIONAL MATCH (e:Expert {id: $expert_id})
+    FOREACH (_ IN CASE WHEN e IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (esc)-[:MATCHED_TO]->(e)
+    )
+    RETURN esc.id AS id
+    """
+    try:
+        with driver.session() as session:
+            session.execute_write(
+                run_query,
+                query,
+                id=escalation_id,
+                farmer_name=farmer_name or "",
+                farmer_phone=farmer_phone or "",
+                farmer_county=farmer_county or "",
+                fertilizer=fertilizer,
+                crop=crop,
+                risk_level=risk_level or "Unclear",
+                status="pending",
+                created_at=int(time.time()),
+                expert_id=expert_id or "",
+            )
+        logger.info(f"Escalation {escalation_id} stored in Neo4j")
+    except Exception as e:
+        logger.error(f"Failed to store escalation: {e}")
+
+
 CYPHER_DIR = os.path.join(os.path.dirname(__file__), "..", "cypher")
-RISK_MATCH_QUERY = open(os.path.join(CYPHER_DIR, "03_risk_match_query.cypher")).read()
-EXPLANATION_PATH_QUERY = open(os.path.join(CYPHER_DIR, "04_explanation_path.cypher")).read()
-ALTERNATIVE_QUERY = open(os.path.join(CYPHER_DIR, "06_alternative_suggestion.cypher")).read()
+RISK_MATCH_QUERY = open(os.path.join(
+    CYPHER_DIR, "03_risk_match_query.cypher")).read()
+EXPLANATION_PATH_QUERY = open(os.path.join(
+    CYPHER_DIR, "04_explanation_path.cypher")).read()
+ALTERNATIVE_QUERY = open(os.path.join(
+    CYPHER_DIR, "06_alternative_suggestion.cypher")).read()
+
+# Load expert match query
+load_expert_match_query()
 
 
 class CheckRequest(BaseModel):
@@ -147,9 +333,13 @@ class ResultCard(BaseModel):
 class EscalateRequest(BaseModel):
     fertilizer_name: str
     crop_name: str
+    farmer_name: Optional[str] = None
     farmer_contact: Optional[str] = None
+    farmer_county: Optional[str] = None
+    risk_level: Optional[str] = None
+    explanation: Optional[str] = None
+    substances: Optional[list] = []
     notes: Optional[str] = None
-    location: Optional[str] = None
 
 
 _CACHE: dict = {}
@@ -416,7 +606,8 @@ def resolve_fertilizer_name(fertilizer_name: str) -> tuple:
     if normalized_input in normalized_map:
         return normalized_map[normalized_input], f"fuzzy:{fertilizer_name}"
 
-    close = difflib.get_close_matches(normalized_input, list(normalized_map.keys()), n=1, cutoff=0.6)
+    close = difflib.get_close_matches(
+        normalized_input, list(normalized_map.keys()), n=1, cutoff=0.6)
     if close:
         return normalized_map[close[0]], f"fuzzy:{fertilizer_name}"
 
@@ -434,7 +625,8 @@ def resolve_crop_name(crop_name: str) -> str:
     if normalized_input in normalized_map:
         return normalized_map[normalized_input]
 
-    close = difflib.get_close_matches(normalized_input, list(normalized_map.keys()), n=1, cutoff=0.75)
+    close = difflib.get_close_matches(normalized_input, list(
+        normalized_map.keys()), n=1, cutoff=0.75)
     if close:
         return normalized_map[close[0]]
 
@@ -507,7 +699,8 @@ def get_explanation_path(fertilizer_name: str):
         return [
             {
                 "pathNodes": [
-                    {"labels": ["Fertilizer"], "props": {"name": fertilizer_name, "brand": product.get("brand")}},
+                    {"labels": ["Fertilizer"], "props": {
+                        "name": fertilizer_name, "brand": product.get("brand")}},
                     {
                         "labels": ["Substance"],
                         "props": {
@@ -555,7 +748,8 @@ def generate_demo_explanation(fertilizer: str, crop: str, risk_level: str, evide
 
     if risk_level == "Risky":
         evidence = evidence_path[0]["pathNodes"][-1]["props"] if evidence_path else {}
-        code = evidence.get("regulationCode") or evidence.get("id") or "the compliance evidence"
+        code = evidence.get("regulationCode") or evidence.get(
+            "id") or "the compliance evidence"
         return (
             f"{fertilizer} is flagged as Risky for {crop} in the current dataset. "
             f"The evidence links it to {code}, which means it can put export eligibility at risk. "
@@ -599,7 +793,8 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
     try:
         if EXPLANATION_PROVIDER == "anthropic":
             from anthropic import Anthropic
-            anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+            anthropic_client = Anthropic(
+                api_key=os.environ.get("ANTHROPIC_API_KEY"))
             msg = anthropic_client.messages.create(
                 model=ANTHROPIC_MODEL,
                 max_tokens=300,
@@ -620,16 +815,19 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
             )
             text = (response.choices[0].message.content or "").strip()
     except (APIError, APIConnectionError, AttributeError, IndexError) as e:
-        logger.warning(f"Explanation provider unavailable; using fallback explanation: {e}")
+        logger.warning(
+            f"Explanation provider unavailable; using fallback explanation: {e}")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     if not text:
-        logger.warning("Explanation provider returned empty content; using fallback explanation.")
+        logger.warning(
+            "Explanation provider returned empty content; using fallback explanation.")
         return generate_demo_explanation(fertilizer, crop, risk_level, evidence_path)
 
     for prefix in ["Here are 3-4 short plain-language sentences", "Here is", "Here's"]:
         if text.lower().startswith(prefix.lower()):
-            text = text.split(":", 1)[-1].strip() if ":" in text[:120] else text
+            text = text.split(
+                ":", 1)[-1].strip() if ":" in text[:120] else text
             break
 
     return text
@@ -639,31 +837,35 @@ def generate_grounded_explanation(fertilizer: str, crop: str, risk_level: str, e
 @limiter.limit("10/minute")
 def check_fertilizer(request: Request, req: CheckRequest):
     try:
-        resolved_name, matched_via = resolve_fertilizer_name(req.fertilizer_name)
+        resolved_name, matched_via = resolve_fertilizer_name(
+            req.fertilizer_name)
         resolved_crop = resolve_crop_name(req.crop_name)
     except (ServiceUnavailable, Neo4jError) as e:
         logger.error(f"Neo4j error during name resolution: {e}")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+        raise HTTPException(
+            status_code=503, detail="Database temporarily unavailable. Please retry.")
 
     cache_key = f"{resolved_name}::{resolved_crop}"
     cached = cache_get(cache_key)
     if cached:
         cached["matched_via"] = matched_via
         if cached.get("risk_level") == "Risky" and not cached.get("alternative_product"):
-            cached["alternative_product"] = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
+            cached["alternative_product"] = DEMO_PRODUCTS.get(
+                resolved_name, {}).get("alternative")
         return ResultCard(**cached)
 
     try:
         match = get_risk_match(resolved_name, resolved_crop)
     except (ServiceUnavailable, Neo4jError) as e:
         logger.error(f"Neo4j error during risk match: {e}")
-        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+        raise HTTPException(
+            status_code=503, detail="Database temporarily unavailable. Please retry.")
 
     if not match or not match.get("fertilizer"):
         raise HTTPException(
             status_code=404,
             detail=f"'{req.fertilizer_name}' not found in dataset, even after fuzzy matching. "
-                    f"Routed to manual/expert review — use the /escalate endpoint."
+            f"Routed to manual/expert review — use the /escalate endpoint."
         )
 
     risk_level = match["riskLevel"]
@@ -674,7 +876,8 @@ def check_fertilizer(request: Request, req: CheckRequest):
         logger.error(f"Neo4j error during explanation path: {e}")
         evidence_path = []
 
-    explanation = generate_grounded_explanation(resolved_name, resolved_crop, risk_level, evidence_path)
+    explanation = generate_grounded_explanation(
+        resolved_name, resolved_crop, risk_level, evidence_path)
 
     next_step_map = {
         "Safe": "Proceed with application as planned.",
@@ -689,7 +892,8 @@ def check_fertilizer(request: Request, req: CheckRequest):
             if alt_result:
                 alt = alt_result.get("alternativeProduct")
         except (ServiceUnavailable, Neo4jError) as e:
-            logger.warning(f"Neo4j error during alternative lookup (non-fatal): {e}")
+            logger.warning(
+                f"Neo4j error during alternative lookup (non-fatal): {e}")
         if not alt:
             alt = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
 
@@ -721,7 +925,8 @@ def _send_escalation_email(req: EscalateRequest, substance_info: list):
     Includes all farmer context so coordinator can route to right expert.
     """
     if not SMTP_EMAIL or not SMTP_PASSWORD or not EXPERT_EMAIL:
-        logger.warning("Email not configured — escalation logged but not emailed.")
+        logger.warning(
+            "Email not configured — escalation logged but not emailed.")
         return
 
     import smtplib
@@ -785,37 +990,73 @@ The farmer will be contacted at: {req.farmer_contact or 'No contact provided'}
 @app.post("/escalate")
 @limiter.limit("5/minute")
 def escalate_to_expert(request: Request, req: EscalateRequest):
+    escalation_id = f"ESC-{uuid.uuid4().hex[:8].upper()}"
+
     logger.info(
-        f"ESCALATION REQUEST | fertilizer={req.fertilizer_name} | crop={req.crop_name} "
+        f"ESCALATION | id={escalation_id} | fertilizer={req.fertilizer_name} "
+        f"| crop={req.crop_name} | county={req.farmer_county} "
         f"| contact={req.farmer_contact} | notes={req.notes}"
     )
 
-    # Try to get substance category from graph for smart routing context
-    substance_info = []
-    try:
-        with driver.session() as session:
-            rows = session.execute_read(
-                run_query,
-                "MATCH (f:Fertilizer {name: $name})-[:CONTAINS]->(s:Substance) "
-                "RETURN s.name AS substance, s.category AS category, s.evidenceDegree AS evidence",
-                name=req.fertilizer_name
-            )
-            substance_info = rows
-    except Exception:
-        pass
+    # 1. Match expert
+    expert = match_expert(
+        county=req.farmer_county or "",
+        crop=req.crop_name,
+        substances=req.substances or [],
+    )
 
-    # Send email notification in background thread so endpoint never blocks
+    expert_id = expert["expertId"] if expert else None
+    expert_name = expert["expertName"] if expert else "Our team"
+    expert_email = expert["expertEmail"] if expert else None
+    organization = expert["organization"] if expert else "SmartExports"
+
+    # 2. Store escalation in Neo4j
+    store_escalation(
+        escalation_id=escalation_id,
+        farmer_name=req.farmer_name or "",
+        farmer_phone=req.farmer_contact or "",
+        farmer_county=req.farmer_county or "",
+        fertilizer=req.fertilizer_name,
+        crop=req.crop_name,
+        risk_level=req.risk_level or "Unclear",
+        expert_id=expert_id,
+    )
+
+    # 3. Email the expert (in background thread so endpoint never blocks)
     import threading
-    threading.Thread(
-        target=_send_escalation_email,
-        args=(req, substance_info),
-        daemon=True
-    ).start()
+    if expert_email:
+        threading.Thread(
+            target=send_expert_email,
+            args=(expert_email, expert_name, req.farmer_name or "",
+                  req.farmer_contact or "", req.farmer_county or "",
+                  req.fertilizer_name, req.crop_name,
+                  req.risk_level or "Unclear",
+                  req.explanation or "No explanation available.",
+                  escalation_id),
+            daemon=True,
+        ).start()
+
+    # 4. SMS the farmer (in background thread)
+    if req.farmer_contact:
+        threading.Thread(
+            target=send_farmer_sms,
+            args=(req.farmer_contact, req.farmer_name or "",
+                  expert_name, organization, escalation_id),
+            daemon=True,
+        ).start()
 
     return {
         "status": "received",
-        "message": "Your request has been logged for expert review. "
-                   "An agronomist will follow up within 24 hours."
+        "escalation_id": escalation_id,
+        "expert_matched": expert is not None,
+        "expert_name": expert_name,
+        "expert_organization": organization,
+        "message": (
+            f"Your request {escalation_id} has been logged. "
+            f"{expert_name} from {organization} will contact you within 24 hours."
+            if expert else
+            "Your request has been logged. Our team will review and connect you to the right expert shortly."
+        ),
     }
 
 
@@ -838,12 +1079,16 @@ def get_crops(q: Optional[str] = None):
     if q:
         normalized_q = normalize_name(q)
         # Exact prefix match first
-        prefix_matches = [c for c in all_crops if normalize_name(c).startswith(normalized_q)]
+        prefix_matches = [c for c in all_crops if normalize_name(
+            c).startswith(normalized_q)]4
         # Then fuzzy matches
-        fuzzy_matches = difflib.get_close_matches(normalized_q, [normalize_name(c) for c in all_crops], n=5, cutoff=0.4)
-        fuzzy_original = [c for c in all_crops if normalize_name(c) in fuzzy_matches]
+        fuzzy_matches = difflib.get_close_matches(
+            normalized_q, [normalize_name(c) for c in all_crops], n=5, cutoff=0.4)
+        fuzzy_original = [
+            c for c in all_crops if normalize_name(c) in fuzzy_matches]
         # Combine, deduplicate, preserve order
-        combined = prefix_matches + [c for c in fuzzy_original if c not in prefix_matches]
+        combined = prefix_matches + \
+            [c for c in fuzzy_original if c not in prefix_matches]
         return {
             "crops": combined,
             "total": len(combined),
@@ -864,10 +1109,7 @@ def get_crops(q: Optional[str] = None):
 # Callback URL to set in AT dashboard:
 # https://smartexports-api.onrender.com/ussd
 # ---------------------------------------------------------------------------
-import sys
-import os as _os
 sys.path.insert(0, _os.path.dirname(__file__))
-from ussd_handler import handle_ussd as _handle_ussd
 
 AT_USERNAME = os.environ.get("AT_USERNAME", "sandbox")
 AT_API_KEY = os.environ.get("AT_API_KEY")
@@ -893,7 +1135,6 @@ def _ussd_risk_check(fertilizer_name: str, crop_name: str):
     except Exception as e:
         logger.error(f"USSD risk check error: {e}")
         return None
-
 
 
 @app.post("/ussd")
@@ -959,7 +1200,8 @@ class ExtractLabelResponse(BaseModel):
 
 def encode_image_to_data_url(image_bytes: bytes, content_type: str) -> str:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    mime = content_type if content_type in ("image/jpeg", "image/png", "image/webp") else "image/jpeg"
+    mime = content_type if content_type in (
+        "image/jpeg", "image/png", "image/webp") else "image/jpeg"
     return f"data:{mime};base64,{b64}"
 
 
@@ -1082,14 +1324,16 @@ def extract_label_with_vision(
         if confidence not in ("high", "medium", "low"):
             confidence = "low"
     except (json.JSONDecodeError, AttributeError):
-        logger.warning(f"Could not parse vision model output as JSON: {raw_text[:200]}")
+        logger.warning(
+            f"Could not parse vision model output as JSON: {raw_text[:200]}")
         product_name = None
         ingredients = []
         confidence = "low"
 
     return ExtractLabelResponse(
         product_name=product_name,
-        possible_ingredients=ingredients if isinstance(ingredients, list) else [],
+        possible_ingredients=ingredients if isinstance(
+            ingredients, list) else [],
         confidence=confidence,
         raw_model_output=raw_text,
     )
@@ -1106,7 +1350,8 @@ async def extract_label(request: Request, file: UploadFile = File(...)):
 
     image_bytes = await file.read()
     if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
+        raise HTTPException(
+            status_code=400, detail="Image too large. Max 20MB.")
 
     return extract_label_with_vision(image_bytes, file.content_type, file.filename)
 
