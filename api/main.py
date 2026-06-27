@@ -802,8 +802,13 @@ def escalate_to_expert(request: Request, req: EscalateRequest):
     except Exception:
         pass
 
-    # Send email notification
-    _send_escalation_email(req, substance_info)
+    # Send email notification in background thread so endpoint never blocks
+    import threading
+    threading.Thread(
+        target=_send_escalation_email,
+        args=(req, substance_info),
+        daemon=True
+    ).start()
 
     return {
         "status": "received",
