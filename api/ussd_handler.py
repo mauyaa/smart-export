@@ -19,20 +19,62 @@ def handle_ussd(session_id, phone, text, risk_check_fn):
         return ("CON Welcome to SmartExports\n"
                 "EU compliance for Kenyan farmers\n\n"
                 "1. Check a fertilizer\n"
-                "2. What is SmartExports?\n"
-                "3. Talk to an expert")
+                "2. Browse risky products\n"
+                "3. What is SmartExports?\n"
+                "4. Talk to an expert")
 
     # Normalize choice
     choice = steps[0].strip()
 
     if choice == "2":
+        # Browse risky products by crop
+        if level == 1:
+            return ("CON Browse risky products\n\n"
+                    "Select your crop:\n"
+                    "1. French beans\n"
+                    "2. Avocado\n"
+                    "3. Snow peas\n"
+                    "4. Tea\n"
+                    "5. Coffee\n"
+                    "6. Other crops")
+
+        if level == 2:
+            browse_crop = steps[1].strip()
+            crop_map = {
+                "1": "French beans",
+                "2": "Avocado",
+                "3": "Snow peas",
+                "4": "Tea",
+                "5": "Coffee",
+            }
+            if browse_crop == "6":
+                return ("END For other crops visit:\n"
+                        "front-end-nu-rosy-90.vercel.app\n\n"
+                        "Or dial again and use option 1\n"
+                        "to check any fertilizer by name.")
+
+            crop_name = crop_map.get(browse_crop, "French beans")
+            risky_map = {
+                "French beans": "Orthene 75SP, Duduthrin 1.75EC,\nDursban 4EC, Ivory 200SC",
+                "Avocado": "Thunder 145SC, Acaramik 1.8EC",
+                "Snow peas": "Duduthrin 1.75EC, Dursban 4EC,\nRidomil Gold MZ 68WG",
+                "Tea": "Duduthrin 1.75EC, Defender 250EC",
+                "Coffee": "Duduthrin 1.75EC, Defender 250EC",
+            }
+            risky_list = risky_map.get(crop_name, "No data yet")
+            return (f"END RISKY for {crop_name}:\n\n"
+                    f"{risky_list}\n\n"
+                    f"Avoid these for EU export.\n"
+                    f"Dial again to check a product.")
+
+    if choice == "3":
         return ("END SmartExports checks if your\n"
                 "fertilizer could block your EU export.\n\n"
                 "Type the product name to get a\n"
                 "Safe, Risky or Unclear verdict.\n"
                 "Dial again to check a product.")
 
-    if choice == "3":
+    if choice == "4":
         if level == 1:
             return ("CON Talk to an expert\n\n"
                     "Enter the fertilizer name\n"
