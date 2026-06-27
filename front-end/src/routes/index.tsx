@@ -264,7 +264,7 @@ function SmartExportsApp() {
     <div className="relative min-h-[100dvh] overflow-hidden bg-background text-foreground">
       <div className="paper-grain pointer-events-none absolute inset-0 opacity-60" />
       <AmbientPanel />
-      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[440px] flex-col px-6 pb-10 pt-6 lg:mx-0 lg:ml-[max(3rem,calc(50vw-30rem))]">
+      <div className="mobile-shell relative mx-auto flex min-h-[100dvh] w-full max-w-[440px] flex-col lg:mx-0 lg:ml-[max(3rem,calc(50vw-30rem))]">
         <TopBar onReset={step !== "intro" ? reset : undefined} />
 
         <main className="flex-1">
@@ -344,8 +344,13 @@ function TopBar({ onReset }: { onReset?: () => void }) {
   const { t, lang, setLang } = useI18n();
   const next: Lang = lang === "en" ? "sw" : "en";
   return (
-    <header className="flex items-center justify-between">
-      <button onClick={onReset} className="flex items-center gap-2" aria-label="SmartExports home">
+    <header className="flex min-h-11 items-center justify-between">
+      <button
+        type="button"
+        onClick={onReset}
+        className="flex min-h-11 items-center gap-2"
+        aria-label="SmartExports home"
+      >
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-sm bg-foreground text-background">
           <Leaf className="h-4 w-4" />
         </span>
@@ -353,6 +358,7 @@ function TopBar({ onReset }: { onReset?: () => void }) {
       </button>
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={() => {
             trackEvent("lang_switch", { lang: next });
             setLang(next);
@@ -364,6 +370,7 @@ function TopBar({ onReset }: { onReset?: () => void }) {
         </button>
         {onReset && (
           <button
+            type="button"
             onClick={onReset}
             className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground transition hover:text-foreground"
           >

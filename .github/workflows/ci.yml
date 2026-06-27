@@ -76,7 +76,12 @@ jobs:
 
       - name: Install dependencies
         working-directory: front-end
-        run: npm ci
+        # package-lock.json was generated on Windows and is missing the
+        # resolved entry for the Linux rolldown native binding, which makes
+        # npm silently skip installing it (npm/cli#4828). Regenerating the
+        # lockfile from scratch here forces npm to resolve the correct
+        # platform binding instead of trusting the stale lock entries.
+        run: rm -f package-lock.json && npm install --no-audit --no-fund
 
       - name: Lint
         working-directory: front-end

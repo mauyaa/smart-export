@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { LanguageProvider } from "../lib/i18n";
+import { MobileAppStatus } from "../components/mobile-app-status";
 
 function NotFoundComponent() {
   return (
@@ -79,6 +80,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#f4f0e6" },
+      { name: "application-name", content: "SmartExports" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "apple-mobile-web-app-title", content: "SmartExports" },
+      { name: "format-detection", content: "telephone=no" },
       { title: "SmartExports — Is your fertilizer EU-safe?" },
       {
         name: "description",
@@ -99,6 +106,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "icon", type: "image/png", href: "/app-icon.png" },
       { rel: "apple-touch-icon", href: "/app-icon.png" },
+      { rel: "apple-touch-icon", sizes: "512x512", href: "/app-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -135,6 +143,7 @@ function RootComponent() {
       <LanguageProvider>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
+        <MobileAppStatus />
       </LanguageProvider>
     </QueryClientProvider>
   );

@@ -9,6 +9,14 @@ const STORAGE_KEY = "smartexports.lang";
 
 type Dict = {
   topbar: { startOver: string; switchTo: string };
+  mobile: {
+    offline: string;
+    installTitle: string;
+    installBody: string;
+    installCta: string;
+    iosHelp: string;
+    dismiss: string;
+  };
   footer: { region: string; tag: string };
   intro: {
     kicker: string;
@@ -105,6 +113,14 @@ type Dict = {
 
 const en: Dict = {
   topbar: { startOver: "Start over", switchTo: "Swahili" },
+  mobile: {
+    offline: "You’re offline. Saved checks remain available; new checks need a connection.",
+    installTitle: "Install SmartExports",
+    installBody: "Add it to your home screen for quick, full-screen access on this device.",
+    installCta: "Install app",
+    iosHelp: "Tap Share in Safari, then choose “Add to Home Screen”.",
+    dismiss: "Dismiss install suggestion",
+  },
   footer: { region: "EU compliance · Kenya", tag: "Grounded in real rejection cases" },
   intro: {
     kicker: "Begin",
@@ -251,6 +267,14 @@ const en: Dict = {
 
 const sw: Dict = {
   topbar: { startOver: "Anza upya", switchTo: "English" },
+  mobile: {
+    offline: "Huna intaneti. Ukaguzi uliohifadhiwa upo; ukaguzi mpya unahitaji muunganisho.",
+    installTitle: "Sakinisha SmartExports",
+    installBody: "Iongeze kwenye skrini ya nyumbani kwa ufikiaji wa haraka wa skrini nzima.",
+    installCta: "Sakinisha programu",
+    iosHelp: "Bonyeza Share kwenye Safari, kisha chagua “Add to Home Screen”.",
+    dismiss: "Funga pendekezo la kusakinisha",
+  },
   footer: { region: "Sheria za EU · Kenya", tag: "Imejengwa kwa kesi halisi za kukataliwa" },
   intro: {
     kicker: "Anza",

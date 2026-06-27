@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f0e6" />
+    <title>SmartExports — Offline</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, system-ui, sans-serif;
+        background: #f4f0e6;
+        color: #27241f;
+      }
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      main {
+        max-width: 360px;
+        text-align: center;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+        border-radius: 16px;
+      }
+      h1 {
+        margin: 24px 0 8px;
+        font-family: Georgia, serif;
+        font-size: 34px;
+        font-weight: 500;
+      }
+      p {
+        color: #686158;
+        line-height: 1.6;
+      }
+      button {
+        min-height: 48px;
+        margin-top: 18px;
+        border: 0;
+        border-radius: 10px;
+        padding: 0 22px;
+        background: #a84f2c;
+        color: white;
+        font: inherit;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/app-icon.png" alt="" />
+      <h1>You’re offline.</h1>
+      <p>Your saved checks are still on this device. Reconnect to run a new compliance check.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>
