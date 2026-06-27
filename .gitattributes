@@ -1,0 +1,15 @@
+# Force LF line endings in the repository for all text files.
+# This prevents Windows CRLF from breaking Linux CI (prettier endOfLine: lf).
+* text=auto eol=lf
+
+# Binary files — never touch line endings
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary

@@ -8,6 +8,7 @@ import {
   escalate,
   extractLabel,
   type ExtractLabelResponse,
+  type MasumiReceipt,
   type ResultCard,
   type RiskLevel,
 } from "@/lib/api";
@@ -17,6 +18,7 @@ import { getHistory, recordCheck, clearHistory, type HistoryEntry } from "@/lib/
 import { trackEvent } from "@/lib/telemetry";
 import { openRearCamera, captureFrame, type CameraSession } from "@/lib/camera";
 import ambientLeaves from "@/assets/ambient-leaves.jpg.asset.json";
+import { MasumiAgentBadge, MasumiReceiptBadge } from "@/components/masumi-badge";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -323,7 +325,12 @@ function SmartExportsApp() {
             />
           )}
           {step === "result" && result && (
-            <Result result={result} onAgain={reset} onEscalate={() => setStep("escalate")} />
+            <Result
+              result={result}
+              masumiReceipt={null}
+              onAgain={reset}
+              onEscalate={() => setStep("escalate")}
+            />
           )}
           {step === "escalate" && (
             <Escalate
@@ -522,6 +529,7 @@ function Intro({
               {t.history.title}
             </p>
             <button
+              type="button"
               onClick={() => {
                 clearHistory();
                 setHistory([]);
@@ -535,6 +543,7 @@ function Intro({
             {history.map((h) => (
               <li key={`${h.product}-${h.crop}-${h.ts}`}>
                 <button
+                  type="button"
                   onClick={() => onPick(h)}
                   className="flex w-full items-center justify-between gap-3 py-3 text-left"
                 >
@@ -553,7 +562,58 @@ function Intro({
           </ul>
         </div>
       )}
+
+      <AboutSection />
     </section>
+  );
+}
+
+/* ---------- About section (What / Why / Masumi) ---------- */
+
+function AboutSection() {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-10">
+      <div className="hairline mb-6" />
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+          {t.about.title}
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground transition hover:text-foreground"
+        >
+          {open ? "Close ↑" : "Read more ↓"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-5 space-y-5 text-[13px] leading-relaxed">
+          <AboutBlock title={t.about.whatTitle} body={t.about.whatBody} />
+          <AboutBlock title={t.about.whyTitle} body={t.about.whyBody} />
+          <AboutBlock title={t.about.valueTitle} body={t.about.valueBody} />
+          <AboutBlock title={t.about.coverageTitle} body={t.about.coverageBody} />
+          <AboutBlock title={t.about.inclusivityTitle} body={t.about.inclusivityBody} />
+
+          <div className="pt-2">
+            <MasumiAgentBadge />
+            <p className="mt-2 text-[11px] text-muted-foreground">{t.about.masumi}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AboutBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div>
+      <p className="mb-1 font-semibold tracking-tight text-foreground">{title}</p>
+      <p className="text-muted-foreground">{body}</p>
+    </div>
   );
 }
 
@@ -1054,10 +1114,12 @@ function summarizeEvidence(result: ResultCard) {
 
 function Result({
   result,
+  masumiReceipt,
   onAgain,
   onEscalate,
 }: {
   result: ResultCard;
+  masumiReceipt?: MasumiReceipt | null;
   onAgain: () => void;
   onEscalate: () => void;
 }) {
@@ -1181,6 +1243,7 @@ function Result({
         </a>
         {!needsReview && (
           <button
+            type="button"
             onClick={onEscalate}
             className="block w-full text-center text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
           >
@@ -1188,6 +1251,8 @@ function Result({
           </button>
         )}
       </div>
+
+      {masumiReceipt && <MasumiReceiptBadge receipt={masumiReceipt} />}
     </section>
   );
 }

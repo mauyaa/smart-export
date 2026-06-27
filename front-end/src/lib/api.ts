@@ -216,3 +216,58 @@ export const COMMON_CROPS = [
   "Passion Fruit",
   "Pineapple",
 ] as const;
+
+// ── Masumi agent protocol ─────────────────────────────────────────────────────
+
+export interface MasumiReceipt {
+  receipt_id: string;
+  agent_id: string;
+  network: string;
+  wallet: string;
+  price_lovelace: number;
+  payment_token: string;
+  sandbox: boolean;
+  validated_at: number;
+  protocol: string;
+}
+
+export interface MasumiResultCard extends ResultCard {
+  masumi_receipt: MasumiReceipt;
+}
+
+/**
+ * Call the Masumi-protocol /masumi/check endpoint.
+ * In sandbox mode (no real wallet configured) any paymentToken value works,
+ * including undefined — the receipt will be marked sandbox: true.
+ */
+export async function checkFertilizerMasumi(
+  input: { fertilizer_name: string; crop_name: string },
+  paymentToken?: string,
+  opts: RequestOptions = {},
+): Promise<MasumiResultCard> {
+  const res = await request(
+    "/masumi/check",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fertilizer_name: input.fertilizer_name,
+        crop_name: input.crop_name,
+        masumi_payment_token: paymentToken ?? null,
+      }),
+    },
+    opts,
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/**
+ * Fetch the Masumi agent card — pricing, capabilities, wallet address.
+ * External platforms call this to discover the SmartExports agent.
+ */
+export async function getMasumiAgentCard(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/masumi/agent-card`);
+  if (!res.ok) throw new ApiError(res.status, "Could not fetch Masumi agent card");
+  return res.json();
+}

@@ -43,6 +43,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from masumi import masumi_agent, validate_masumi_payment, make_receipt
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartexports")
 
@@ -1107,3 +1109,147 @@ async def extract_label(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Image too large. Max 20MB.")
 
     return extract_label_with_vision(image_bytes, file.content_type, file.filename)
+
+
+# ── Masumi AI Agent endpoints ─────────────────────────────────────────────────
+
+class MasumiCheckRequest(BaseModel):
+    fertilizer_name: str
+    crop_name: str
+    masumi_payment_token: Optional[str] = None
+
+
+class MasumiCheckResponse(BaseModel):
+    fertilizer: str
+    crop: str
+    risk_level: str
+    explanation: str
+    next_step: str
+    alternative_product: Optional[str] = None
+    evidence: dict
+    matched_via: str
+    masumi_receipt: dict
+
+
+@app.post("/masumi/check", response_model=MasumiCheckResponse)
+@limiter.limit("10/minute")
+def masumi_check(request: Request, req: MasumiCheckRequest):
+    """
+    Masumi-protocol compliance check.
+
+    Accepts an optional masumi_payment_token (Cardano tx_hash).
+    In sandbox mode any token (or none) is accepted and the receipt is
+    marked sandbox=True. In production mode the token must be a valid
+    confirmed Cardano transaction sending >= 1 ADA to the agent wallet.
+
+    Returns the same ResultCard as /check plus a masumi_receipt object.
+    """
+    # 1. Validate payment token
+    validation = validate_masumi_payment(req.masumi_payment_token)
+    if not validation["valid"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Payment required. {validation.get('reason', 'invalid_token')}. "
+                   f"See /masumi/agent-card for pricing and wallet address."
+        )
+
+    # 2. Run the same compliance check logic as /check
+    try:
+        resolved_name, matched_via = resolve_fertilizer_name(req.fertilizer_name)
+        resolved_crop = resolve_crop_name(req.crop_name)
+    except (ServiceUnavailable, Neo4jError) as e:
+        logger.error(f"Masumi check — Neo4j error during name resolution: {e}")
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+
+    cache_key = f"{resolved_name}::{resolved_crop}"
+    cached = cache_get(cache_key)
+
+    if cached:
+        cached["matched_via"] = matched_via
+        if cached.get("risk_level") == "Risky" and not cached.get("alternative_product"):
+            cached["alternative_product"] = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
+        result_data = dict(cached)
+    else:
+        try:
+            match = get_risk_match(resolved_name, resolved_crop)
+        except (ServiceUnavailable, Neo4jError) as e:
+            logger.error(f"Masumi check — Neo4j error during risk match: {e}")
+            raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please retry.")
+
+        if not match or not match.get("fertilizer"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"'{req.fertilizer_name}' not found. Use /escalate for expert review."
+            )
+
+        risk_level = match["riskLevel"]
+
+        try:
+            evidence_path = get_explanation_path(resolved_name)
+        except (ServiceUnavailable, Neo4jError):
+            evidence_path = []
+
+        explanation = generate_grounded_explanation(resolved_name, resolved_crop, risk_level, evidence_path)
+
+        next_step_map = {
+            "Safe": "Proceed with application as planned.",
+            "Risky": "Avoid this product for export-bound crops. See suggested alternative below, or consult an agronomist.",
+            "Unclear": "Do not assume safety. Escalate to an agronomist before applying.",
+        }
+
+        alt = None
+        if risk_level == "Risky":
+            try:
+                alt_result = get_alternative(resolved_name, resolved_crop)
+                if alt_result:
+                    alt = alt_result.get("alternativeProduct")
+            except (ServiceUnavailable, Neo4jError):
+                pass
+            if not alt:
+                alt = DEMO_PRODUCTS.get(resolved_name, {}).get("alternative")
+
+        raw_evidence = {
+            "regulatoryHits": match.get("regulatoryHits", []),
+            "rejectionHits": match.get("rejectionHits", []),
+            "organicHits": match.get("organicHits", []),
+        }
+        safe_evidence = json.loads(json.dumps(raw_evidence, default=str))
+
+        result_data = {
+            "fertilizer": match["fertilizer"],
+            "crop": match["crop"] or resolved_crop,
+            "risk_level": risk_level,
+            "explanation": explanation,
+            "next_step": next_step_map.get(risk_level, "Seek expert review."),
+            "alternative_product": alt,
+            "evidence": safe_evidence,
+            "matched_via": matched_via,
+        }
+        cache_set(cache_key, dict(result_data))
+
+    # 3. Attach Masumi receipt
+    receipt = make_receipt(
+        req.masumi_payment_token,
+        result_data["fertilizer"],
+        result_data["crop"],
+        validation,
+    )
+    logger.info(
+        f"Masumi check | receipt={receipt['receipt_id']} | "
+        f"sandbox={receipt['sandbox']} | "
+        f"{result_data['fertilizer']} + {result_data['crop']} → {result_data['risk_level']}"
+    )
+
+    return MasumiCheckResponse(**result_data, masumi_receipt=receipt)
+
+
+@app.get("/masumi/agent-card")
+def masumi_agent_card():
+    """
+    Masumi registry-compatible agent card.
+
+    Returns metadata for SmartExports as a discoverable Masumi agent:
+    name, capabilities, pricing (lovelace), wallet address, endpoint URLs.
+    External platforms can use this to discover and call the agent.
+    """
+    return masumi_agent.get_agent_card()

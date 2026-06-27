@@ -109,6 +109,20 @@ type Dict = {
     copied: string;
   };
   errors: { ocrEmpty: string; ocrFail: string; generic: string; sendFail: string; network: string };
+  about: {
+    title: string;
+    whatTitle: string;
+    whatBody: string;
+    whyTitle: string;
+    whyBody: string;
+    valueTitle: string;
+    valueBody: string;
+    coverageTitle: string;
+    coverageBody: string;
+    inclusivityTitle: string;
+    inclusivityBody: string;
+    masumi: string;
+  };
 };
 
 const en: Dict = {
@@ -263,6 +277,26 @@ const en: Dict = {
     sendFail: "Could not send. Please retry.",
     network: "Could not reach the server. Check your connection and try again.",
   },
+  about: {
+    title: "About SmartExports",
+    whatTitle: "What this system does",
+    whatBody:
+      "SmartExports is a pre-application compliance screening tool. A farmer photographs or types a fertilizer label — the system checks it against EU regulations and real border rejection cases — and returns Safe, Risky, or Unclear in plain language with a concrete next step.",
+    whyTitle: "Why it exists",
+    whyBody:
+      "The compliance check currently happens at the EU border — after the crop is grown, harvested, and shipped. By then the financial damage is done and irreversible. SmartExports moves that check to the moment of purchase or application, the only point where the farmer can still change the outcome.",
+    valueTitle: "The core value proposition",
+    valueBody:
+      "It's not about technology — it's about timing. The same information exists in EU databases, but it's inaccessible to a smallholder farmer at the point of purchase. SmartExports bridges that gap.",
+    coverageTitle: "Dataset coverage",
+    coverageBody:
+      "Currently covers ~21 products, 18 substances, 11 crops, and 4 EU regulations — roughly 5–10% of PCPB-registered products. If a product is in the dataset, the verdict is real. If not, the system returns Unclear and routes to expert review. The system knows what it doesn't know and says so, rather than guessing.",
+    inclusivityTitle: "Inclusivity",
+    inclusivityBody:
+      "No smartphone needed: dial *384*58768# on any feature phone (USSD). Web app for smartphones. EN/SW language toggle built in. Voice IVR in local languages is Phase Three scope for farmers who cannot read.",
+    masumi:
+      "Available as a paid AI agent on the Masumi · Cardano network — 1 ADA per compliance check.",
+  },
 };
 
 const sw: Dict = {
@@ -415,6 +449,26 @@ const sw: Dict = {
     generic: "Kuna hitilafu. Tafadhali jaribu tena.",
     sendFail: "Haikuweza kutuma. Tafadhali jaribu tena.",
     network: "Hatuwezi kufikia seva. Angalia muunganisho wako na ujaribu tena.",
+  },
+  about: {
+    title: "Kuhusu SmartExports",
+    whatTitle: "Mfumo huu unafanya nini",
+    whatBody:
+      "SmartExports ni chombo cha kuchunguza uzingatiaji wa sheria kabla ya kutumia mbolea. Mkulima anapiga picha au kuandika jina la lebo — mfumo unaliangalia dhidi ya sheria za EU na kesi halisi za kukataliwa bandarini — na unarudi Salama, Hatari, au Si Wazi kwa lugha rahisi na hatua inayofuata.",
+    whyTitle: "Kwa nini inahitajika",
+    whyBody:
+      "Ukaguzi wa uzingatiaji kwa sasa unafanywa mpakani mwa EU — baada ya zao kukua, kuvunwa, na kusafirishwa. Wakati huo madhara ya kifedha tayari yamefanyika na hayawezi kubadilishwa. SmartExports inahamisha ukaguzi huo hadi wakati wa ununuzi au matumizi, wakati pekee ambapo mkulima anaweza bado kubadilisha matokeo.",
+    valueTitle: "Thamani kuu",
+    valueBody:
+      "Si kuhusu teknolojia — ni kuhusu wakati. Taarifa ile ile ipo katika hifadhidata za EU, lakini haiwezekani kuifikia kwa mkulima mdogo wakati wa ununuzi. SmartExports inaziba pengo hilo.",
+    coverageTitle: "Upeo wa data",
+    coverageBody:
+      "Kwa sasa inashughulikia bidhaa ~21, vitu 18, mazao 11, na kanuni 4 za EU. Ikiwa bidhaa ipo katika data, jibu ni halisi. La sivyo, mfumo unarudi Si Wazi na kupeleka kwa ukaguzi wa mtaalamu.",
+    inclusivityTitle: "Usawa wa ufikiaji",
+    inclusivityBody:
+      "Hakuna haja ya simu ya kisasa: piga *384*58768# kwenye simu yoyote (USSD). Programu ya wavuti kwa simu za kisasa. Kitufe cha lugha EN/SW kimejengwa ndani.",
+    masumi:
+      "Inapatikana kama wakala wa AI inayolipwa kwenye mtandao wa Masumi · Cardano — ADA 1 kwa kila ukaguzi.",
   },
 };
 
