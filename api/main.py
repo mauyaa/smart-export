@@ -14,30 +14,10 @@ Flow per request:
 Run with: uvicorn main:app --reload --port 8000
 Production GraphRAG env vars: NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, FEATHERLESS_API_KEY
 Use SMARTEXPORTS_DEMO_MODE=true for local startup without production secrets.
-
-Explanation provider is configurable: set EXPLANATION_PROVIDER=anthropic (with
-ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
-Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
-try:
-    from masumi import masumi_agent, validate_masumi_payment, make_receipt
-except ModuleNotFoundError:
-    from api.masumi import masumi_agent, validate_masumi_payment, make_receipt
 from ussd_handler import handle_ussd as _handle_ussd
-import os as _os
-import sys
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from fastapi import UploadFile, File
-from openai import OpenAI, APIError, APIConnectionError
-from neo4j.exceptions import Neo4jError, ServiceUnavailable
-from neo4j import GraphDatabase
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, HTTPException, Request
-import os
+from masumi import masumi_agent, validate_masumi_payment, make_receipt
 import json
 import time
 import logging
@@ -45,13 +25,28 @@ import difflib
 import base64
 import uuid
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
-
 from dotenv import load_dotenv
-load_dotenv()
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from openai import OpenAI, APIError, APIConnectionError
+from neo4j.exceptions import Neo4jError, ServiceUnavailable
+from neo4j import GraphDatabase
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+import sys
+import os
 
+# Ensure api/ directory is in path so masumi can be found
+# regardless of whether this file is run directly or imported as api.main
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("smartexports")
