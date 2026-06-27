@@ -20,7 +20,10 @@ ANTHROPIC_API_KEY) to run the grounded explanation on Claude; defaults to
 Featherless/Llama otherwise. Vision extraction always uses Featherless.
 """
 
-from masumi import masumi_agent, validate_masumi_payment, make_receipt
+try:
+    from masumi import masumi_agent, validate_masumi_payment, make_receipt
+except ModuleNotFoundError:
+    from api.masumi import masumi_agent, validate_masumi_payment, make_receipt
 from ussd_handler import handle_ussd as _handle_ussd
 import os as _os
 import sys
