@@ -20,9 +20,9 @@ export async function compressImage(file: File): Promise<File> {
         ? new OffscreenCanvas(width, height)
         : Object.assign(document.createElement("canvas"), { width, height });
 
-    const ctx = (canvas as HTMLCanvasElement | OffscreenCanvas).getContext(
-      "2d",
-    ) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    const ctx = (
+      canvas as HTMLCanvasElement | OffscreenCanvas
+    ).getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!ctx) return file;
     ctx.drawImage(bitmap as CanvasImageSource, 0, 0, width, height);
 
