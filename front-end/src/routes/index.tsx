@@ -475,8 +475,7 @@ function Intro({
         </p>
         <p className="mt-2 text-center text-[11px] text-muted-foreground/70">
           No smartphone? Dial{" "}
-          <span className="font-mono font-medium text-foreground">*384*58768#</span>
-          {" "}on any phone
+          <span className="font-mono font-medium text-foreground">*384*58768#</span> on any phone
         </p>
       </div>
 
