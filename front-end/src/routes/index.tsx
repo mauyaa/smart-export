@@ -66,7 +66,7 @@ function SmartExportsApp() {
   const [crop, setCrop] = useState<string>("");
   const [result, setResult] = useState<ResultCard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [escalated, setEscalated] = useState<{ ticket: string } | null>(null);
+  const [escalated, setEscalated] = useState<{ ticket: string; expertName?: string; expertOrg?: string } | null>(null);
   const [slow, setSlow] = useState(false);
 
   // Track every in-flight request so we can cancel on back / reset / unmount.
@@ -272,7 +272,7 @@ function SmartExportsApp() {
         },
         { signal },
       );
-      setEscalated({ ticket: r.ticket });
+      setEscalated({ ticket: r.ticket, expertName: r.expert_name, expertOrg: r.expert_organization });
       trackEvent("escalate_done", { ok: true });
     } finally {
       done();
@@ -672,7 +672,7 @@ function Capture({ onPhoto, onBack }: { onPhoto: (f: File) => void; onBack: () =
       setDenied(false);
       if (videoRef.current) {
         videoRef.current.srcObject = s.stream;
-        await videoRef.current.play().catch(() => {});
+        await videoRef.current.play().catch(() => { });
       }
     } catch {
       setDenied(true);
@@ -690,7 +690,7 @@ function Capture({ onPhoto, onBack }: { onPhoto: (f: File) => void; onBack: () =
   useEffect(() => {
     if (session && videoRef.current && !videoRef.current.srcObject) {
       videoRef.current.srcObject = session.stream;
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { });
     }
   }, [session]);
 
@@ -1345,7 +1345,7 @@ function Escalate({
   product: string;
   crop: string;
   result: ResultCard | null;
-  done: { ticket: string } | null;
+  done: { ticket: string; expertName?: string; expertOrg?: string } | null;
   onSubmit: (
     farmerName: string,
     farmerCounty: string,
@@ -1405,7 +1405,7 @@ function Escalate({
           {t.escalate.doneTitle}
         </h2>
         <p className="mx-auto mt-3 max-w-[30ch] text-[14px] text-muted-foreground">
-          {t.escalate.doneBody(product, crop)}
+          {t.escalate.doneBody(product, crop, done?.expertName, done?.expertOrg)}
         </p>
 
         <div className="mx-auto mt-8 max-w-[18rem] rounded-md border border-border bg-card px-5 py-4 text-left">

@@ -110,7 +110,7 @@ type Dict = {
     sending: string;
     cancel: string;
     doneTitle: string;
-    doneBody: (p: string, c: string) => string;
+    doneBody: (p: string, c: string, expertName?: string, expertOrg?: string) => string;
     done: string;
     ticketLabel: string;
     ticketHint: string;
@@ -137,7 +137,7 @@ type Dict = {
 const en: Dict = {
   topbar: { startOver: "Start over", switchTo: "Swahili" },
   mobile: {
-    offline: "You’re offline. Saved checks remain available; new checks need a connection.",
+    offline: "You're offline. Saved checks remain available; new checks need a connection.",
     installTitle: "Install SmartExports",
     installBody: "Add it to your home screen for quick, full-screen access on this device.",
     installCta: "Install app",
@@ -280,8 +280,10 @@ const en: Dict = {
     sending: "Sending…",
     cancel: "Cancel",
     doneTitle: "Sent to expert review.",
-    doneBody: (p, c) =>
-      `Our team will look into ${p} for ${c} and follow up if you left contact details.`,
+    doneBody: (p, c, expertName, expertOrg) =>
+      expertName
+        ? `${expertName} from ${expertOrg ?? "our team"} will review ${p} for ${c} and contact you within 24 hours.`
+        : `Our team will look into ${p} for ${c} and follow up if you left contact details.`,
     done: "Done",
     ticketLabel: "Your reference",
     ticketHint: "Save this. Quote it if you contact us about this product.",
@@ -463,7 +465,10 @@ const sw: Dict = {
     sending: "Inatuma…",
     cancel: "Ghairi",
     doneTitle: "Imetumwa kwa ukaguzi.",
-    doneBody: (p, c) => `Timu yetu itaichunguza ${p} kwa ${c} na kukufuatilia ukiacha mawasiliano.`,
+    doneBody: (p, c, expertName, expertOrg) =>
+      expertName
+        ? `${expertName} kutoka ${expertOrg ?? "timu yetu"} atakagua ${p} kwa ${c} na kukuwasiliana ndani ya masaa 24.`
+        : `Timu yetu itaichunguza ${p} kwa ${c} na kukufuatilia ukiacha mawasiliano.`,
     done: "Imekamilika",
     ticketLabel: "Kumbukumbu yako",
     ticketHint: "Hifadhi hii. Itaje ukiwasiliana nasi kuhusu bidhaa hii.",
