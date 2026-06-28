@@ -30,6 +30,15 @@ export interface ExtractLabelResponse {
   raw_model_output: string;
 }
 
+export interface EscalateResponse {
+  ok: boolean;
+  ticket: string;
+  expert_name?: string;
+  expert_organization?: string;
+  expert_matched?: boolean;
+  message?: string;
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;
@@ -60,11 +69,8 @@ async function parseError(res: Response): Promise<never> {
   throw new ApiError(res.status, detail);
 }
 
-// Render free-tier cold starts can take 30s+. We retry once on transient
-// network/5xx with a longer cap, surfacing "waking up" via onSlow callback.
 export interface RequestOptions {
   signal?: AbortSignal;
-  // Called when the request crosses the slow threshold (likely cold start).
   onSlow?: () => void;
 }
 
@@ -105,15 +111,13 @@ async function request(
 
   try {
     const res = await attempt(timeoutMs);
-    // Retry once on 502/503/504 (Render warming up).
     if ([502, 503, 504].includes(res.status)) {
       opts.onSlow?.();
       return await attempt(timeoutMs);
     }
     return res;
   } catch (e) {
-    if (opts.signal?.aborted) throw e; // user cancelled
-    // One retry for network errors / timeout (cold start).
+    if (opts.signal?.aborted) throw e;
     opts.onSlow?.();
     try {
       return await attempt(timeoutMs);
@@ -170,8 +174,7 @@ export async function escalate(
     notes?: string;
   },
   opts: RequestOptions = {},
-): Promise<{ ok: boolean; ticket: string }> {
-  // Client-generated ticket reference (backend doesn't return one yet).
+): Promise<EscalateResponse> {
   const ticket = makeTicket();
   const payload = { ...input, notes: input.notes ? `[${ticket}] ${input.notes}` : `[${ticket}]` };
   const res = await request(
@@ -184,8 +187,15 @@ export async function escalate(
     opts,
   );
   if (!res.ok) await parseError(res);
-  await res.json().catch(() => undefined);
-  return { ok: true, ticket };
+  const data = await res.json().catch(() => ({}));
+  return {
+    ok: true,
+    ticket: data.escalation_id || ticket,
+    expert_name: data.expert_name,
+    expert_organization: data.expert_organization,
+    expert_matched: data.expert_matched,
+    message: data.message,
+  };
 }
 
 export async function checkHealth(): Promise<boolean> {
@@ -198,8 +208,7 @@ export async function checkHealth(): Promise<boolean> {
 }
 
 function makeTicket(): string {
-  // Compact, human-readable, low collision: SX-XXXXXX (base32 of random+time).
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/1/O/I/L
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
   let out = "";
@@ -207,7 +216,6 @@ function makeTicket(): string {
   return `SX-${out}`;
 }
 
-// Kenyan export-bound crops commonly screened.
 export const COMMON_CROPS = [
   "Tea",
   "Coffee",
@@ -221,8 +229,6 @@ export const COMMON_CROPS = [
   "Pineapple",
 ] as const;
 
-// Kenyan counties — used to match an escalation to the right local expert.
-// Kept in sync with dashboard/src/lib/experts.ts (KENYA_COUNTIES).
 export const KENYA_COUNTIES = [
   "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa", "Homa Bay",
   "Isiolo", "Kajiado", "Kakamega", "Kericho", "Kiambu", "Kilifi", "Kirinyaga", "Kisii",
@@ -250,11 +256,6 @@ export interface MasumiResultCard extends ResultCard {
   masumi_receipt: MasumiReceipt;
 }
 
-/**
- * Call the Masumi-protocol /masumi/check endpoint.
- * In sandbox mode (no real wallet configured) any paymentToken value works,
- * including undefined — the receipt will be marked sandbox: true.
- */
 export async function checkFertilizerMasumi(
   input: { fertilizer_name: string; crop_name: string },
   paymentToken?: string,
@@ -277,10 +278,6 @@ export async function checkFertilizerMasumi(
   return res.json();
 }
 
-/**
- * Fetch the Masumi agent card — pricing, capabilities, wallet address.
- * External platforms call this to discover the SmartExports agent.
- */
 export async function getMasumiAgentCard(): Promise<Record<string, unknown>> {
   const res = await fetch(`${API_BASE}/masumi/agent-card`);
   if (!res.ok) throw new ApiError(res.status, "Could not fetch Masumi agent card");
